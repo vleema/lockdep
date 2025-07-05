@@ -1,0 +1,101 @@
+\documentclass[a4paper,12pt]{report}
+
+% Basic packages for LuaLaTeX with Unicode support
+% No need for inputenc with LuaLaTeX as it supports UTF-8 natively
+\usepackage{fontspec}
+\usepackage[brazil]{babel}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{listings}  % Regular listings is fine with LuaLaTeX
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{indentfirst}
+\usepackage{setspace}
+\usepackage{cleveref}  % For enhanced cross-referencing
+\usepackage{caption}   % For better caption handling
+\usepackage{float}     % For improved figure/table placement
+% \usepackage{luatextra} % Extra features for LuaLaTeX
+
+% Hyperref configuration for better PDF output
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=green,
+    pdftitle={Estudo acerca de memória no x86},
+    pdfauthor={José Henrique Targino Dias Gois},
+    pdfsubject={Memória no x86},
+    pdfkeywords={sistemas operacionais, sistemas de memória, intel x86}
+}
+
+% Code listing styling
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    extendedchars=true,
+    texcl=true,
+    inputencoding=utf8
+}
+
+\lstset{style=mystyle}
+
+\geometry{margin=2.5cm}
+\onehalfspacing
+
+% Custom command for easier section referencing
+\newcommand{\secref}[1]{Seção~\ref{#1}}
+\newcommand{\figref}[1]{Figura~\ref{#1}}
+\newcommand{\tabref}[1]{Tabela~\ref{#1}}
+\newcommand{\eqnref}[1]{Equação~\ref{#1}}
+\newcommand{\chapref}[1]{Capítulo~\ref{#1}}
+
+% Document start
+\begin{document}
+
+% Cover page
+\include{a_capa/a01_capa}
+
+% Abstracts
+\include{a_capa/a02_resumo}
+\include{a_capa/a03_abstract}
+
+% Custom TOC as defined in a04_toc.tex
+\include{a_capa/a04_toc}
+
+% Introduction
+\chapter{Introdução}\label{chap:intro}
+
+% References
+\chapter{Referências}\label{chap:refs}
+% \include{x_referencias/x01_referencias}
+
+% Appendices if needed
+\appendix
+% Uncomment and add appendix includes as needed
+% \chapter{Apêndice A}\label{chap:appendixA}
+% \include{j_apendices/j01_appendix}
+
+\end{document}
