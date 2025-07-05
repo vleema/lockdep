@@ -20,8 +20,7 @@ Mutexes garantem exclusão mútua em regiões críticas, mas quando múltiplas t
 
   ○ Manter o histórico da ordem em que mutexes são adquiridos por cada thread.
 
-  ○ Detectar quando uma thread tenta adquirir mutexes em uma ordem
-    incompatível com a previamente observada, antes que o deadlock ocorra.
+  ○ Detectar quando uma thread tenta adquirir mutexes em uma ordem incompatível com a previamente observada, antes que o deadlock ocorra.
 
   ○ Exibir alertas sobre inversões de ordem (e.g., thread A adquire A → B, e thread B tenta B → A).
 
@@ -37,7 +36,6 @@ Mutexes garantem exclusão mútua em regiões críticas, mas quando múltiplas t
 
 ● Implementar pelo menos uma das duas abordagens a seguir (vale pontos extras implementar ambas):
 
-1. Grafo de espera com detecção de ciclos (usando DFS ou algoritmo
-equivalente).
+1. Grafo de espera com detecção de ciclos (usando DFS ou algoritmo equivalente).
 
 2. Verificação de ordem de aquisição com comparação entre pares de mutexes adquiridos por diferentes threads.
