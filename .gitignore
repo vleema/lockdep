@@ -4,3 +4,6 @@ build/
 .neoconf.json
 .editorconfig
 .cache/
+./**/*.aux
+./**/*.log
+./**/*.out
