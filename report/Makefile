@@ -1,6 +1,7 @@
 all: clean
 	lualatex main.tex
 	make clean
+	firefox --new-window main.pdf
 
 clean:
 	rm ./**/*.aux ./**/*.log ./**/*.out ./**/*.out || true
