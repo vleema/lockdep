@@ -17,8 +17,8 @@
 \usepackage{cleveref}  % For enhanced cross-referencing
 \usepackage{caption}   % For better caption handling
 \usepackage{float}     % For improved figure/table placement
-% \usepackage{luatextra} % Extra features for LuaLaTeX
-
+\usepackage{luatextra} % Extra features for LuaLaTeX
+% \usepackage[strings]{underscore}
 % Hyperref configuration for better PDF output
 \hypersetup{
     colorlinks=true,
@@ -66,11 +66,11 @@
 \onehalfspacing
 
 % Custom command for easier section referencing
-\newcommand{\secref}[1]{Seção~\ref{#1}}
-\newcommand{\figref}[1]{Figura~\ref{#1}}
-\newcommand{\tabref}[1]{Tabela~\ref{#1}}
-\newcommand{\eqnref}[1]{Equação~\ref{#1}}
-\newcommand{\chapref}[1]{Capítulo~\ref{#1}}
+\newcommand{\secref}[1]{Seção\ref{#1}}
+\newcommand{\figref}[1]{Figura\ref{#1}}
+\newcommand{\tabref}[1]{Tabela\ref{#1}}
+\newcommand{\eqnref}[1]{Equação\ref{#1}}
+\newcommand{\chapref}[1]{Capítulo\ref{#1}}
 
 % Document start
 \begin{document}

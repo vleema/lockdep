@@ -17,14 +17,14 @@ Em essência, a interposição de funções cria uma camada intermediária entre
 
 Em sistemas Unix-like, vários mecanismos permitem a interposição de funções:
 
-\subsubsection{LD\_PRELOAD}
+\subsubsection{LD_PRELOAD}
 
-O mecanismo mais comum para interposição de funções em tempo de execução é através da variável de ambiente \texttt{LD\_PRELOAD}. Esta variável permite especificar bibliotecas compartilhadas que serão carregadas antes de quaisquer outras, dando a elas prioridade na resolução de símbolos.
+O mecanismo mais comum para interposição de funções em tempo de execução é através da variável de ambiente \texttt{LD_PRELOAD}. Esta variável permite especificar bibliotecas compartilhadas que serão carregadas antes de quaisquer outras, dando a elas prioridade na resolução de símbolos.
 
 O processo funciona da seguinte forma:
 
 \begin{enumerate}
-    \item O loader dinâmico (\texttt{ld.so} ou \texttt{ld-linux.so}) verifica a variável \texttt{LD\_PRELOAD}
+    \item O loader dinâmico (\texttt{ld.so} ou \texttt{ld-linux.so}) verifica a variável \texttt{LD_PRELOAD}
     \item Carrega as bibliotecas especificadas antes das bibliotecas padrão
     \item Ao resolver símbolos, prefere implementações encontradas nas bibliotecas pré-carregadas
     \item Funções com o mesmo nome nas bibliotecas pré-carregadas "substituem" as funções originais
@@ -32,12 +32,12 @@ O processo funciona da seguinte forma:
 
 Exemplo de uso:
 \begin{verbatim}
-$ LD_PRELOAD=./libminhaintercep.so ./meuPrograma
+\$ LD_PRELOAD=./libminhaintercep.so ./meuPrograma
 \end{verbatim}
 
-\subsubsection{Funções dlsym() e RTLD\_NEXT}
+\subsubsection{Funções dlsym() e RTLD_NEXT}
 
-Para que a interposição seja útil, geralmente é necessário não apenas substituir a função original, mas também chamá-la após realizar alguma operação. Isso é possível através da função \texttt{dlsym()} com o identificador especial \texttt{RTLD\_NEXT}, que busca a "próxima" ocorrência de um símbolo na ordem de carregamento de bibliotecas.
+Para que a interposição seja útil, geralmente é necessário não apenas substituir a função original, mas também chamá-la após realizar alguma operação. Isso é possível através da função \texttt{dlsym()} com o identificador especial \texttt{RTLD_NEXT}, que busca a "próxima" ocorrência de um símbolo na ordem de carregamento de bibliotecas.
 
 \begin{lstlisting}[language=C, caption={Exemplo de interposição de função}]
 #include <dlfcn.h>
@@ -62,7 +62,7 @@ int open(const char *path, int oflag, ...) {
 
 \subsection{Atributos de Construtor e Destrutor}
 
-O GCC e outros compiladores C suportam os atributos \texttt{\_\_attribute\_\_((constructor))} e \texttt{\_\_attribute\_\_((destructor))}, que permitem que funções sejam executadas automaticamente quando uma biblioteca compartilhada é carregada ou descarregada:
+O GCC e outros compiladores C suportam os atributos \texttt{_attribute_((constructor))} e \texttt{_attribute_((destructor))}, que permitem que funções sejam executadas automaticamente quando uma biblioteca compartilhada é carregada ou descarregada:
 
 \begin{lstlisting}[language=C, caption={Uso de construtor e destrutor em biblioteca compartilhada}]
 __attribute__((constructor))
@@ -110,9 +110,9 @@ A interposição de funções apresenta algumas limitações importantes:
 No contexto de nosso projeto de detecção de deadlocks, a interposição de funções é particularmente útil para interceptar chamadas às funções de mutex da biblioteca pthread:
 
 \begin{itemize}
-    \item \texttt{pthread\_mutex\_lock()}
-    \item \texttt{pthread\_mutex\_unlock()}
-    \item \texttt{pthread\_mutex\_trylock()}
+    \item \texttt{pthread_mutex_lock()}
+    \item \texttt{pthread_mutex_unlock()}
+    \item \texttt{pthread_mutex_trylock()}
 \end{itemize}
 
 Ao interceptar estas chamadas, podemos:
