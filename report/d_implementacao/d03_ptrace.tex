@@ -1,0 +1,206 @@
+\section{Implementação Baseada em ptrace}\label{sec:ptrace}
+
+\subsection{Visão Geral}
+
+Além da abordagem de interposição de funções, este projeto também implementa uma metodologia alternativa para detectar deadlocks utilizando a API \texttt{ptrace} do Linux. Esta abordagem apresenta vantagens significativas, sendo a principal delas a capacidade de analisar processos em execução sem necessidade de modificação do código-fonte ou recompilação, incluindo processos que já estão em estado de deadlock.
+
+A ferramenta baseada em \texttt{ptrace} funciona através dos seguintes mecanismos:
+
+\begin{enumerate}
+    \item \textbf{Anexação a processos em execução}: Utiliza a chamada de sistema \texttt{ptrace} para conectar-se a um processo existente;
+    \item \textbf{Interceptação de syscalls}: Monitora chamadas de sistema relacionadas a operações de mutex, especialmente chamadas \texttt{futex};
+    \item \textbf{Análise de backtrace}: Examina a pilha de chamadas de cada thread para identificar threads bloqueadas em operações de mutex;
+    \item \textbf{Construção de grafo de dependências}: Similar à abordagem LD\_PRELOAD, mantém um grafo de dependências entre locks;
+    \item \textbf{Detecção de deadlocks}: Combina informações de syscalls e backtraces para identificar ciclos de espera entre threads.
+\end{enumerate}
+
+\subsection{Arquitetura do Sistema}
+
+A implementação baseada em \texttt{ptrace} é organizada em módulos específicos, cada um responsável por uma funcionalidade distinta:
+
+\begin{enumerate}
+    \item \textbf{ptrace\_attach}: Gerencia a conexão com o processo-alvo, incluindo a anexação ao processo principal e suas threads.
+
+    \item \textbf{syscall\_intercept}: Intercepta e analisa chamadas de sistema, especialmente operações \texttt{futex} usadas por mutexes pthread.
+
+    \item \textbf{backtrace}: Responsável por capturar e analisar backtraces (pilhas de chamadas) de threads para identificar operações de bloqueio em mutexes.
+
+    \item \textbf{pthread\_structures}: Interpreta as estruturas internas da biblioteca pthread na memória do processo analisado.
+
+    \item \textbf{lock\_tracker}: Mantém o grafo de dependências entre locks e implementa os algoritmos de detecção de deadlock, similar ao módulo de análise na abordagem LD\_PRELOAD.
+\end{enumerate}
+
+Esta separação modular permite adaptar cada componente independentemente e facilita testes unitários para cada funcionalidade.
+
+\begin{figure}[h]
+    \centering
+    % Placeholder para diagrama da arquitetura ptrace
+    % \includegraphics[width=0.8\textwidth]{ptrace_arquitetura.png}
+    \caption{Arquitetura do sistema de detecção de deadlocks baseado em ptrace}
+    \label{fig:ptrace_arquitetura}
+\end{figure}
+
+\subsection{Interceptação de Chamadas de Sistema}
+
+A interceptação de chamadas de sistema é um componente central da ferramenta. Através da API \texttt{ptrace}, conseguimos pausar o processo-alvo antes e depois de cada chamada de sistema (syscall), permitindo examinar os parâmetros e resultados.
+
+O módulo \texttt{syscall\_intercept} registra manipuladores (handlers) para syscalls específicas:
+
+\begin{itemize}
+    \item \textbf{futex}: Operações de sincronização de baixo nível usadas por mutexes pthread;
+    \item \textbf{clone/fork}: Para rastrear a criação de novas threads;
+    \item \textbf{exit}: Para detectar quando threads terminam sua execução.
+\end{itemize}
+
+O exemplo a seguir demonstra como processamos chamadas \texttt{futex}, que são essenciais para operações de mutex:
+
+\begin{lstlisting}[language=C, caption={Processamento de chamadas futex para detecção de operações mutex}]
+bool syscall_handle_futex(pid_t pid, bool entering) {
+    if (entering) {
+        // Ao entrar na syscall futex, extraímos informações sobre a operação
+        unsigned long futex_uaddr = ptrace_get_syscall_arg(pid, 0);
+        int futex_op = ptrace_get_syscall_arg(pid, 1);
+        int futex_val = ptrace_get_syscall_arg(pid, 2);
+
+        // Processamos apenas operações de lock/unlock de mutex
+        int futex_cmd = futex_op & FUTEX_CMD_MASK;
+        if (futex_cmd == FUTEX_WAIT || futex_cmd == FUTEX_WAKE) {
+            // FUTEX_WAIT geralmente indica tentativa de aquisição de lock
+            // FUTEX_WAKE geralmente indica liberação de lock
+
+            // Atualizamos nosso grafo de dependências com esta informação
+            return true;
+        }
+    } else {
+        // Ao sair da syscall futex, verificamos o resultado
+        long result = ptrace_get_syscall_result(pid);
+        // Atualizamos o estado baseado no sucesso/falha da operação
+    }
+
+    return true;
+}
+\end{lstlisting}
+
+\subsection{Análise de Backtrace}
+
+Uma característica distintiva da abordagem \texttt{ptrace} é a capacidade de analisar backtraces de threads, o que é especialmente valioso para diagnosticar processos que já estão em estado de deadlock. O módulo \texttt{backtrace} implementa esta funcionalidade através dos seguintes passos:
+
+\begin{enumerate}
+    \item Captura o estado dos registradores da thread via \texttt{ptrace};
+    \item Utiliza os registradores \texttt{RBP} (frame pointer) e \texttt{RSP} (stack pointer) para percorrer a pilha;
+    \item Extrai endereços de retorno para reconstruir a pilha de chamadas;
+    \item Quando possível, resolve símbolos (nomes de funções) usando informações de debug.
+\end{enumerate}
+
+Para detectar threads bloqueadas em operações de mutex, o sistema procura por padrões específicos no backtrace:
+
+\begin{lstlisting}[language=C, caption={Detecção de threads bloqueadas em mutexes via backtrace}]
+bool backtrace_is_waiting_for_mutex(const thread_backtrace_t* backtrace, void** mutex_addr) {
+    if (backtrace == NULL || backtrace->frame_count == 0) {
+        return false;
+    }
+
+    // Procura por funções de lock de mutex no backtrace
+    for (int i = 0; i < backtrace->frame_count; i++) {
+        const char* name = backtrace->frames[i].symbol_name;
+
+        // Verifica funções que indicam espera por mutex
+        if (strstr(name, "pthread_mutex_lock") != NULL ||
+            strstr(name, "__lll_lock_wait") != NULL ||
+            strstr(name, "futex_wait") != NULL) {
+
+            // Indica que uma espera por mutex foi encontrada
+            return true;
+        }
+    }
+
+    return false;
+}
+\end{lstlisting}
+
+Ao examinar os backtraces de todas as threads simultaneamente, podemos identificar ciclos de espera que constituem deadlocks, mesmo em processos que já estão bloqueados.
+
+\subsection{Rastreamento de Locks e Grafo de Dependências}
+
+Similar à abordagem baseada em interposição, a implementação \texttt{ptrace} também mantém um grafo de dependências entre locks. A principal diferença é como este grafo é construído: em vez de interceptar chamadas diretas às funções pthread, inferimos as operações de lock através de chamadas \texttt{futex} e análise de backtrace.
+
+O módulo \texttt{lock\_tracker} mantém:
+
+\begin{itemize}
+    \item Uma lista de threads monitoradas
+    \item Para cada thread, uma lista de locks atualmente mantidos
+    \item Um grafo de dependências entre locks
+\end{itemize}
+
+Quando detectamos que uma thread tenta adquirir um lock enquanto já possui outro, adicionamos uma aresta ao grafo e verificamos se isso cria um ciclo:
+
+\begin{lstlisting}[language=C, caption={Verificação de ciclos no grafo de dependências}]
+bool lock_tracker_register_acquisition(pid_t thread_id, void* lock_addr, bool is_recursive) {
+    // ... código omitido para brevidade ...
+
+    if (thread->lock_count > 0) {
+        // Para cada lock já mantido por esta thread
+        held_lock_t* held_lock = thread->held_locks;
+        while (held_lock != NULL) {
+            graph_node_t* held_node = graph_find_or_create_node(lock_graph, held_lock->lock_addr);
+
+            // Verifica se adicionar esta dependência criaria um ciclo
+            if (graph_would_create_cycle(lock_graph, held_node, lock_node)) {
+                fprintf(stderr, "ALERTA: Violação de ordem de lock detectada!\n");
+                fprintf(stderr, "Thread %d tentando adquirir lock %p enquanto mantém lock %p\n",
+                        thread_id, lock_addr, held_lock->lock_addr);
+
+                potential_deadlock = true;
+            } else {
+                // Adiciona a dependência: held_lock -> lock_addr
+                graph_add_edge(lock_graph, held_node, lock_node);
+            }
+
+            held_lock = held_lock->next;
+        }
+    }
+
+    // ... código omitido para brevidade ...
+}
+\end{lstlisting}
+
+\subsection{Interface de Linha de Comando}
+
+A ferramenta baseada em \texttt{ptrace} é implementada como um utilitário de linha de comando que aceita vários parâmetros para controlar seu comportamento:
+
+\begin{verbatim}
+Uso: ptrace-lockdep [OPÇÕES] PID
+
+Opções:
+  -h, --help            Mostra esta mensagem de ajuda
+  -v, --verbose         Habilita saída detalhada
+  -a, --all-threads     Monitora todas as threads (padrão: apenas a thread principal)
+  -t, --timeout=SECS    Define um timeout para monitoramento em segundos
+  -d, --detect-only     Apenas detecta deadlocks, sem modificar comportamento do processo
+  -i, --interval=SECS   Intervalo de análise em segundos (padrão: 1)
+  -e, --existing-only   Apenas analisa deadlocks existentes e termina
+\end{verbatim}
+
+Esta interface flexível permite diferentes modos de operação, desde monitoramento contínuo até análise pontual de processos suspeitos de estarem em deadlock.
+
+\subsection{Vantagens e Limitações}
+
+A abordagem baseada em \texttt{ptrace} oferece vantagens distintas sobre a interposição de funções:
+
+\begin{itemize}
+    \item \textbf{Não-invasiva}: Não requer modificação do código-fonte ou recompilação do programa monitorado;
+    \item \textbf{Universal}: Funciona com programas vinculados estaticamente e dinamicamente;
+    \item \textbf{Análise post-mortem}: Pode examinar processos que já estão em estado de deadlock;
+    \item \textbf{Introspectiva}: Permite examinar o estado interno de threads bloqueadas.
+\end{itemize}
+
+Entretanto, esta abordagem também apresenta limitações:
+
+\begin{itemize}
+    \item \textbf{Sobrecarga de desempenho}: O uso de \texttt{ptrace} introduz uma penalidade significativa de desempenho;
+    \item \textbf{Complexidade de implementação}: Interpretar chamadas \texttt{futex} e estruturas internas do pthread é mais complexo que simplesmente interceptar funções;
+    \item \textbf{Dependência de versão}: O layout exato das estruturas pode variar entre diferentes versões da biblioteca pthread;
+    \item \textbf{Menos precisão}: Em alguns casos, inferir operações de lock a partir de syscalls é menos preciso que interceptar as chamadas de API diretamente.
+\end{itemize}
+
+Estas vantagens e limitações fazem da abordagem \texttt{ptrace} uma ferramenta complementar à interposição de funções, cada uma sendo mais adequada para diferentes cenários de uso.

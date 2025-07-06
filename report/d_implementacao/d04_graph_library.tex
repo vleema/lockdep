@@ -1,0 +1,164 @@
+\section{Biblioteca de Análise de Grafos}\label{sec:graph_library}
+
+\subsection{Visão Geral}
+
+Para implementar a detecção de deadlocks de maneira eficiente e reutilizável, desenvolvemos uma biblioteca modular de grafos que serve como componente central tanto da abordagem baseada em interposição quanto da baseada em \texttt{ptrace}. Esta biblioteca encapsula todas as operações relacionadas a grafos direcionados, incluindo a representação, manipulação e detecção de ciclos.
+
+A decisão de separar a lógica de grafo em uma biblioteca independente foi motivada por vários fatores:
+
+\begin{itemize}
+    \item \textbf{Reutilização de código}: O mesmo código de grafos é utilizado em ambas implementações;
+    \item \textbf{Separação de responsabilidades}: Isola a lógica de representação e algoritmos de grafo da lógica específica de detecção de deadlocks;
+    \item \textbf{Testabilidade}: Permite testar algoritmos de grafos independentemente do resto do sistema;
+    \item \textbf{Manutenibilidade}: Facilita a implementação de otimizações ou novos algoritmos sem afetar outros componentes.
+\end{itemize}
+
+\subsection{Estrutura de Dados}
+
+A biblioteca implementa um grafo direcionado utilizando listas de adjacência, uma escolha que equilibra eficiência de memória e desempenho para as operações mais comuns em nossa aplicação. As principais estruturas de dados são:
+
+\begin{lstlisting}[language=C, caption={Estruturas de dados para representação de grafos}]
+/**
+ * @brief Node structure for the graph
+ */
+struct graph_node {
+    void* id;                // Unique identifier for the node
+    size_t index;            // Index in the graph's node array (for algorithms)
+    struct graph_node* next; // For traversal in the node list
+};
+
+/**
+ * @brief Edge structure for the graph
+ */
+struct graph_edge {
+    graph_node_t* from;       // Source node
+    graph_node_t* to;         // Destination node
+    struct graph_edge* next;  // For traversal in the edge list
+};
+
+/**
+ * @brief Graph structure
+ */
+struct graph {
+    graph_node_t* nodes;      // Linked list of all nodes
+    graph_edge_t* edges;      // Linked list of all edges
+    size_t node_count;        // Number of nodes in the graph
+    size_t edge_count;        // Number of edges in the graph
+};
+\end{lstlisting}
+
+Cada nó no grafo representa um mutex, identificado por seu endereço de memória. As arestas representam a ordem de aquisição: uma aresta de A para B indica que o mutex A foi adquirido antes do mutex B por alguma thread.
+
+\subsection{Operações Principais}
+
+A biblioteca fornece um conjunto completo de operações para construção e análise de grafos:
+
+\begin{enumerate}
+    \item \textbf{Criação e destruição de grafos}:
+    \begin{itemize}
+        \item \texttt{graph\_create()}: Aloca e inicializa um novo grafo vazio
+        \item \texttt{graph\_destroy()}: Libera toda a memória associada ao grafo
+    \end{itemize}
+
+    \item \textbf{Manipulação de nós e arestas}:
+    \begin{itemize}
+        \item \texttt{graph\_find\_or\_create\_node()}: Localiza ou cria um nó com identificador específico
+        \item \texttt{graph\_add\_edge()}: Adiciona uma aresta direcionada entre dois nós
+        \item \texttt{graph\_get\_all\_nodes()}: Retorna todos os nós do grafo
+        \item \texttt{graph\_get\_outgoing\_edges()}: Retorna todas as arestas de saída de um nó
+    \end{itemize}
+
+    \item \textbf{Algoritmos de detecção de ciclos}:
+    \begin{itemize}
+        \item \texttt{graph\_has\_cycle()}: Verifica se o grafo contém algum ciclo
+        \item \texttt{graph\_would\_create\_cycle()}: Verifica se adicionar uma aresta específica criaria um ciclo
+    \end{itemize}
+
+    \item \textbf{Utilitários de depuração}:
+    \begin{itemize}
+        \item \texttt{graph\_print()}: Gera uma representação textual do grafo para depuração
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Algoritmo de Detecção de Ciclos}
+
+O coração da detecção de deadlocks é o algoritmo de detecção de ciclos, implementado utilizando uma Busca em Profundidade (DFS). O algoritmo percorre o grafo, marcando nós visitados e detectando se um nó já visitado é alcançado novamente:
+
+\begin{lstlisting}[language=C, caption={Algoritmo de detecção de ciclos usando DFS}]
+static bool dfs_has_cycle(graph_t* graph, graph_node_t* node, graph_node_t* target, bool* visited) {
+    // Marca o nó atual como visitado
+    visited[node->index] = true;
+
+    // Verifica todas as arestas de saída do nó atual
+    graph_edge_t* edge = graph->edges;
+    while (edge) {
+        if (edge->from == node) {
+            // Se encontramos o alvo, há um ciclo
+            if (edge->to == target) {
+                return true;
+            }
+
+            // Se este nó não foi visitado, recursão
+            if (!visited[edge->to->index]) {
+                if (dfs_has_cycle(graph, edge->to, target, visited)) {
+                    return true;
+                }
+            }
+        }
+        edge = edge->next;
+    }
+
+    return false;
+}
+
+bool graph_would_create_cycle(graph_t* graph, graph_node_t* from, graph_node_t* to) {
+    if (graph == NULL || from == NULL || to == NULL) {
+        return false;
+    }
+
+    // Se adicionar uma aresta de 'to' para 'from' criaria um ciclo,
+    // então já existe um caminho de 'from' para 'to'
+
+    // Aloca e inicializa array de visitados
+    bool* visited = calloc(graph->node_count, sizeof(bool));
+    if (visited == NULL) {
+        fprintf(stderr, "Failed to allocate memory for cycle detection\n");
+        return false;  // Por segurança, assumimos que não há ciclo se não pudermos verificar
+    }
+
+    // Verifica se há um caminho de 'to' para 'from'
+    bool has_cycle = dfs_has_cycle(graph, to, from, visited);
+
+    free(visited);
+    return has_cycle;
+}
+\end{lstlisting}
+
+Esta implementação é particularmente eficiente para detectar se uma nova aresta criaria um ciclo antes mesmo de adicioná-la ao grafo, permitindo que o sistema identifique potenciais deadlocks proativamente.
+
+\subsection{Integração com o Sistema de Detecção}
+
+A biblioteca de grafos é utilizada de maneira similar em ambas as abordagens de detecção:
+
+\begin{enumerate}
+    \item Um grafo é inicializado no início da execução do sistema
+    \item Quando uma thread adquire um lock, verificamos se ela já possui outros locks
+    \item Em caso positivo, adicionamos arestas representando a ordem de aquisição
+    \item Antes de adicionar uma nova aresta, verificamos se isso criaria um ciclo
+    \item Se um ciclo é detectado, alertamos sobre um potencial deadlock
+\end{enumerate}
+
+Este design modular permite que a lógica de análise de grafos seja compartilhada entre as duas abordagens, mantendo apenas as diferenças em como as informações de aquisição de locks são obtidas: por interposição de funções ou por análise via \texttt{ptrace}.
+
+\subsection{Considerações de Desempenho}
+
+Para garantir que a biblioteca seja eficiente mesmo em aplicações com grande número de locks e threads, vários aspectos foram considerados:
+
+\begin{itemize}
+    \item \textbf{Complexidade de tempo}: O algoritmo de detecção de ciclos tem complexidade O(V+E), onde V é o número de nós e E é o número de arestas
+    \item \textbf{Uso de memória}: A representação por lista de adjacências é eficiente para grafos esparsos, como é tipicamente o caso em padrões de lock em programas reais
+    \item \textbf{Operações frequentes}: Operações como adição de nós e arestas são otimizadas para serem O(1) ou O(n) em casos específicos
+    \item \textbf{Escalabilidade}: O sistema consegue lidar com grafos dinâmicos que crescem conforme novos locks são descobertos durante a execução do programa
+\end{itemize}
+
+Em aplicações típicas, com número moderado de locks e padrões de aquisição bem definidos, esta implementação oferece um bom equilíbrio entre uso de memória e velocidade de detecção.

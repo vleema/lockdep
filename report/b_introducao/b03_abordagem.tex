@@ -1,14 +1,25 @@
 \section{Abordagem}\label{sec:abordagem}
 
-Para atingir os objetivos propostos, nossa abordagem combina conceitos de teoria dos grafos, engenharia de software e sistemas operacionais. A implementação adota as seguintes estratégias:
+Para atingir os objetivos propostos, nossa abordagem combina conceitos de teoria dos grafos, engenharia de software e sistemas operacionais. O projeto implementa duas estratégias distintas e complementares para detecção de deadlocks:
 
-\subsection{Interposição de Funções}
+\subsection{Biblioteca Compartilhada com Interposição de Funções}
 
-Utilizamos a técnica de interposição de funções através do mecanismo LD\_PRELOAD do sistema de vinculação dinâmica. Esta abordagem permite interceptar chamadas às funções da biblioteca pthread sem modificar o código fonte das aplicações monitoradas, tornando o sistema transparente e de fácil adoção.
+A primeira abordagem utiliza a técnica de interposição de funções através do mecanismo LD\_PRELOAD do sistema de vinculação dinâmica. Esta estratégia permite interceptar chamadas às funções da biblioteca pthread sem modificar o código fonte das aplicações monitoradas, tornando o sistema transparente e de fácil adoção. É ideal para uso durante desenvolvimento e testes de software.
+
+\subsection{Ferramenta de Análise baseada em ptrace}
+
+A segunda abordagem implementa uma ferramenta baseada na API \texttt{ptrace} do Linux, que permite anexar-se a processos em execução para monitorar suas chamadas de sistema e examinar seu estado de memória. Esta estratégia é particularmente valiosa para:
+
+\begin{itemize}
+    \item Analisar processos já em execução, sem necessidade de reiniciá-los;
+    \item Detectar deadlocks em processos que já estão bloqueados;
+    \item Monitorar aplicações compiladas estaticamente, onde LD\_PRELOAD não funciona;
+    \item Realizar análises post-mortem de problemas de sincronização.
+\end{itemize}
 
 \subsection{Detecção de Deadlocks}
 
-Implementamos duas abordagens complementares para detecção de deadlocks:
+Ambas as abordagens implementam dois métodos complementares para detecção de deadlocks:
 
 \begin{enumerate}
     \item \textbf{Grafo de espera com detecção de ciclos}:
@@ -26,6 +37,18 @@ Implementamos duas abordagens complementares para detecção de deadlocks:
     \end{itemize}
 \end{enumerate}
 
+\subsection{Biblioteca Modular de Análise de Grafos}
+
+Um aspecto fundamental do projeto é a separação da lógica de análise de grafos em uma biblioteca reutilizável, compartilhada por ambas as abordagens. Esta biblioteca encapsula:
+
+\begin{itemize}
+    \item A representação de grafos direcionados;
+    \item Algoritmos de detecção de ciclos;
+    \item Verificação proativa de operações que criariam ciclos.
+\end{itemize}
+
+Esta modularização permite concentrar a complexidade algorítmica em um único componente bem testado e otimizado.
+
 \subsection{Estruturas de Dados Otimizadas}
 
 Para garantir eficiência e baixo overhead durante o monitoramento, utilizamos estruturas de dados cuidadosamente projetadas:
@@ -33,7 +56,8 @@ Para garantir eficiência e baixo overhead durante o monitoramento, utilizamos e
 \begin{itemize}
     \item Listas ligadas para representação do grafo, permitindo atualizações dinâmicas;
     \item Tabelas hash para acesso rápido aos nós do grafo;
-    \item Contextos thread-específicos para rastrear o estado de cada thread independentemente.
+    \item Contextos thread-específicos para rastrear o estado de cada thread independentemente;
+    \item Estruturas específicas para a análise de backtrace na abordagem ptrace.
 \end{itemize}
 
 \subsection{Diagnóstico Detalhado}
@@ -44,7 +68,8 @@ Quando uma violação é detectada, o sistema fornece diagnósticos detalhados q
     \item Identificação dos locks envolvidos;
     \item Backtrace completo do ponto de detecção;
     \item Visualização do estado atual do grafo de dependências;
-    \item Informações sobre a ordem de aquisição recomendada.
+    \item Informações sobre a ordem de aquisição recomendada;
+    \item No caso da abordagem ptrace, detalhes sobre o estado das threads bloqueadas.
 \end{itemize}
 
-Esta abordagem multilateral permite que o sistema detecte efetivamente diferentes padrões de deadlock, incluindo tanto aqueles causados por espera circular direta quanto os decorrentes de violações na ordem de aquisição de locks.
+Esta abordagem multilateral permite que o sistema detecte efetivamente diferentes padrões de deadlock, incluindo tanto aqueles causados por espera circular direta quanto os decorrentes de violações na ordem de aquisição de locks. A combinação das duas estratégias oferece uma solução completa para detecção de deadlocks em diferentes cenários e estágios do ciclo de vida de software.
