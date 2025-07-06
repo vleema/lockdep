@@ -107,75 +107,13 @@ Este relatório apresenta o desenvolvimento de um sistema para detecção de dea
 \include{d_implementacao/d02_estruturas}
 
 \chapter{Resultados}\label{chap:results}
-
-\section{Testes Realizados}
-
-Para validar o sistema, desenvolvemos dois casos de teste principais:
-
-\begin{enumerate}
-    \item \textbf{simple\_test.c}: Demonstra a criação de dependências em uma única thread, adquirindo mutexes em uma ordem específica.
-    \item \textbf{deadlock\_test.c}: Simula um cenário clássico de deadlock AB-BA, onde duas threads adquirem mutexes em ordens opostas.
-\end{enumerate}
-
-\section{Análise dos Resultados}
-
-\subsection{Detecção de Violação de Ordem}
-
-No teste de deadlock, o sistema detectou corretamente a violação de ordem quando:
-
-\begin{enumerate}
-    \item Thread 1 estabeleceu a ordem mutex1 → mutex2
-    \item Thread 2 tentou estabelecer a ordem mutex2 → mutex1
-\end{enumerate}
-
-O sistema emitiu um alerta indicando que esta violação de ordem poderia levar a um deadlock.
-
-\subsection{Detecção de Ciclo}
-
-Após a violação de ordem, o sistema realizou a verificação de ciclo no grafo de dependências e detectou corretamente o ciclo formado pelas dependências:
-
-\begin{enumerate}
-    \item mutex1 → mutex2 (estabelecido pela Thread 1)
-    \item mutex2 → mutex1 (tentado pela Thread 2)
-\end{enumerate}
-
-Este ciclo foi corretamente identificado como uma situação potencial de deadlock.
-
-\section{Limitações}
-
-O sistema atual possui algumas limitações:
-
-\begin{enumerate}
-    \item Não detecta deadlocks envolvendo outros tipos de primitivas de sincronização (semáforos, variáveis de condição).
-    \item A sobrecarga de monitoramento pode ser significativa em aplicações com uso intensivo de mutexes.
-    \item A interposição via LD\_PRELOAD não funciona com aplicações estaticamente vinculadas.
-\end{enumerate}
+\include{e_resultados/e01_testes}
+\include{e_resultados/e02_analise}
+\include{e_resultados/e03_limitacoes}
 
 % References
 \chapter{Referências}\label{chap:refs}
 
-\begin{thebibliography}{9}
-\bibitem{lockdep}
-  Rusty Russell,
-  \emph{Lockdep: How to read its reports},
-  Linux Kernel Documentation.
-
-\bibitem{pthread}
-  IEEE Computer Society,
-  \emph{POSIX Thread Libraries},
-  IEEE Std 1003.1-2017.
-
-\bibitem{corbet}
-  Jonathan Corbet,
-  \emph{The kernel lock validator},
-  LWN.net, 2006.
-
-\bibitem{deadlock}
-  Coffman, E.G., Elphick, M.J., Shoshani, A.,
-  \emph{System Deadlocks},
-  ACM Computing Surveys, 1971.
-\end{thebibliography}
-% \include{x_referencias/x01_referencias}
 
 % Appendices
 \appendix

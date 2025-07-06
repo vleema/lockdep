@@ -1,0 +1,23 @@
+\section{Análise dos Resultados}
+
+\subsection{Detecção de Violação de Ordem}
+
+No teste de deadlock, o sistema detectou corretamente a violação de ordem quando:
+
+\begin{enumerate}
+    \item Thread 1 estabeleceu a ordem mutex1 → mutex2
+    \item Thread 2 tentou estabelecer a ordem mutex2 → mutex1
+\end{enumerate}
+
+O sistema emitiu um alerta indicando que esta violação de ordem poderia levar a um deadlock.
+
+\subsection{Detecção de Ciclo}
+
+Após a violação de ordem, o sistema realizou a verificação de ciclo no grafo de dependências e detectou corretamente o ciclo formado pelas dependências:
+
+\begin{enumerate}
+    \item mutex1 → mutex2 (estabelecido pela Thread 1)
+    \item mutex2 → mutex1 (tentado pela Thread 2)
+\end{enumerate}
+
+Este ciclo foi corretamente identificado como uma situação potencial de deadlock.

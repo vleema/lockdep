@@ -1,0 +1,9 @@
+\section{Limitações}
+
+O sistema atual possui algumas limitações:
+
+\begin{enumerate}
+    \item Não detecta deadlocks envolvendo outros tipos de primitivas de sincronização (semáforos, variáveis de condição).
+    \item A sobrecarga de monitoramento pode ser significativa em aplicações com uso intensivo de mutexes.
+    \item A interposição via LD\_PRELOAD não funciona com aplicações estaticamente vinculadas.
+\end{enumerate}
