@@ -49,7 +49,7 @@ file(GLOB PTRACE_SOURCES
 )
 
 # Test program sources
-file(GLOB TEST_SOURCES "tests/*.c")
+file(GLOB TEST_SOURCES "src/tests/*.c")
 
 # Include directories
 include_directories(src/include)

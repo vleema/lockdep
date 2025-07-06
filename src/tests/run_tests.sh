@@ -5,6 +5,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Get the directory of this script
@@ -28,11 +29,11 @@ usage() {
     echo "  -v, --verbose         Show verbose output"
     echo "  -h, --help            Show this help message"
     echo
-    echo "If no test name is provided, all tests will be run."
-    echo "Available tests:"
+    echo -e "If no test name is provided, all tests will be run."
+    echo -e "Available tests (in didactic order):"
 
-    # List all test files
-    for test_file in "$SCRIPT_DIR"/*.c; do
+    # List all test files in numeric order
+    for test_file in "$SCRIPT_DIR"/t*.c; do
         test_name=$(basename "$test_file" .c)
         echo "  - $test_name"
     done
@@ -152,7 +153,8 @@ run_test() {
 # Get list of all tests
 get_all_tests() {
     local tests=()
-    for test_file in "$SCRIPT_DIR"/*.c; do
+    # Sort tests by their numeric prefix to maintain didactic order
+    for test_file in $(ls "$SCRIPT_DIR"/t*.c | sort); do
         test_name=$(basename "$test_file" .c)
         tests+=("$test_name")
     done
@@ -184,6 +186,12 @@ else
     echo -e "${YELLOW}======================================${NC}"
     echo -e "${GREEN}Passed: ${#PASSED_TESTS[@]}${NC}"
     echo -e "${RED}Failed: ${#FAILED_TESTS[@]}${NC}"
+
+    echo -e "\n${CYAN}Didactic Test Progression:${NC}"
+    echo -e "${CYAN}------------------------${NC}"
+    echo -e "${CYAN}t01-t02: Basic lock ordering and classic deadlock${NC}"
+    echo -e "${CYAN}t03-t06: Advanced deadlock scenarios${NC}"
+    echo -e "${CYAN}t07-t09: Deadlock avoidance techniques${NC}"
 
     if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
         echo -e "\n${RED}Failed tests:${NC}"
