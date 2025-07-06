@@ -1,0 +1,150 @@
+\section{Estruturas de Dados}\label{sec:estruturas}
+
+O design cuidadoso das estruturas de dados é fundamental para o desempenho e a eficácia do sistema de detecção de deadlocks. Esta seção detalha as principais estruturas de dados utilizadas na implementação, suas relações e finalidades.
+
+\subsection{Representação do Grafo de Dependências}
+
+O grafo de dependências entre locks é o cerne do sistema de detecção de deadlocks. Ele é representado através de:
+
+\begin{enumerate}
+    \item \textbf{Nós (lock\_node\_t)}: Representam locks únicos no sistema.
+    \item \textbf{Arestas (dependency\_edge\_t)}: Representam relações de ordem entre locks.
+\end{enumerate}
+
+\begin{lstlisting}[language=C, caption={Definição das estruturas para representação do grafo}]
+typedef struct lock_node {
+    // Identifica unicamente o lock (ex: endereço do mutex)
+    void* lock_addr;
+    // Para percorrer a lista
+    struct lock_node* next;
+} lock_node_t;
+
+typedef struct dependency_edge {
+    // Nó de lock de origem (lock "de")
+    lock_node_t* from;
+    // Nó de lock de destino (lock "para")
+    lock_node_t* to;
+    // Lista encadeada de todas as arestas de dependência
+    struct dependency_edge* next;
+} dependency_edge_t;
+\end{lstlisting}
+
+Optamos por uma representação de grafo baseada em lista de adjacências, onde cada aresta representa uma dependência direta entre dois locks. Esta escolha foi motivada por:
+
+\begin{itemize}
+    \item Eficiência na adição de novas arestas, operação frequente durante o monitoramento
+    \item Facilidade de implementação de algoritmos de busca em profundidade para detecção de ciclos
+    \item Economia de memória para grafos esparsos, situação comum em aplicações reais
+\end{itemize}
+
+\subsection{Rastreamento de Locks por Thread}
+
+Para monitorar os locks mantidos por cada thread em um dado momento, implementamos uma estrutura de pilha, já que locks são tipicamente adquiridos e liberados em um padrão LIFO (Last-In-First-Out):
+
+\begin{lstlisting}[language=C, caption={Estrutura de pilha para rastreamento de locks}]
+typedef struct held_lock {
+    // O lock sendo mantido
+    lock_node_t* lock;
+    // Próximo lock na pilha (lock mais recente no topo)
+    struct held_lock* next;
+} held_lock_t;
+
+typedef struct thread_context {
+    pthread_t thread_id;
+    // Pilha de locks atualmente mantidos por esta thread
+    held_lock_t* held_locks;
+    // O tamanho da pilha de locks mantidos
+    int lock_depth;
+    // Links all thread contexts together for easy traversal
+    struct thread_context* next;
+} thread_context_t;
+\end{lstlisting}
+
+Cada thread possui seu próprio contexto (\texttt{thread\_context\_t}) que armazena:
+\begin{itemize}
+    \item O identificador da thread
+    \item Uma pilha de locks atualmente mantidos pela thread
+    \item A profundidade atual da pilha (número de locks mantidos)
+    \item Um ponteiro para o próximo contexto de thread, formando uma lista ligada
+\end{itemize}
+
+Esta abordagem permite:
+\begin{itemize}
+    \item Acesso O(1) ao lock mais recentemente adquirido por uma thread
+    \item Fácil adição e remoção de locks à medida que são adquiridos e liberados
+    \item Reconstrução da ordem de aquisição de locks por cada thread
+\end{itemize}
+
+\subsection{Estruturas Globais do Sistema}
+
+O estado global do sistema é mantido através de algumas estruturas centrais:
+
+\begin{lstlisting}[language=C, caption={Estruturas globais do sistema}]
+// Estado global do grafo de locks
+static lock_node_t* lock_graph = NULL;
+static dependency_edge_t* dependencies = NULL;
+static thread_context_t* thread_contexts = NULL;
+
+// Mutex para proteger o estado interno do grafo de locks
+static pthread_mutex_t lockdep_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Para desabilitar lockdep sem recompilação
+bool lockdep_enabled = true;
+\end{lstlisting}
+
+Estas estruturas globais armazenam:
+\begin{itemize}
+    \item Todos os nós (locks) conhecidos pelo sistema
+    \item Todas as arestas (dependências) entre locks
+    \item Os contextos de todas as threads monitoradas
+    \item Um mutex para proteção das estruturas compartilhadas
+    \item Uma flag para ativação/desativação dinâmica do sistema
+\end{itemize}
+
+Utilizamos um mutex global (\texttt{lockdep\_mutex}) para proteger o acesso concorrente às estruturas de dados do sistema. Esta abordagem, embora potencialmente limitante para o paralelismo em sistemas com grande número de threads, simplifica significativamente a implementação e evita condições de corrida nas estruturas de dados compartilhadas.
+
+\subsection{Prevenção de Recursão}
+
+Um desafio particular na implementação de um sistema baseado em interposição de funções é evitar recursão infinita. Isto ocorre porque:
+
+\begin{enumerate}
+    \item A função interposta chama funções internas que utilizam mutex
+    \item Estas chamadas são novamente interceptadas pela interposição
+    \item Isto leva a uma recursão infinita
+\end{enumerate}
+
+Para prevenir este problema, utilizamos uma flag thread-local:
+
+\begin{lstlisting}[language=C, caption={Flag de prevenção de recursão}]
+// O lockdep usa um mutex para proteger seu estado interno, então usamos isto para
+// evitar recursão na validação do lockdep através dele mesmo
+static __thread bool in_interpose = false;
+\end{lstlisting}
+
+A declaração \texttt{\_\_thread} garante que cada thread tenha sua própria cópia da variável, evitando interferências entre threads. Antes de processar uma chamada de mutex, verificamos esta flag e a configuramos como \texttt{true}, impedindo que chamadas recursivas sejam processadas pelo sistema de detecção.
+
+\subsection{Armazenamento de Informações de Diagnóstico}
+
+Quando uma violação é detectada, é importante fornecer informações detalhadas que ajudem a identificar e corrigir o problema. Para isso, utilizamos:
+
+\begin{itemize}
+    \item Backtrace das chamadas de função no momento da violação
+    \item Identificadores dos locks envolvidos
+    \item Descrição da violação detectada (ciclo ou inconsistência na ordem)
+    \item Estado atual do grafo de dependências
+\end{itemize}
+
+Estas informações são coletadas no momento da detecção e apresentadas ao usuário através de mensagens de erro detalhadas, facilitando a identificação da causa raiz do problema.
+
+\subsection{Considerações sobre Eficiência e Escalabilidade}
+
+As estruturas de dados escolhidas refletem um equilíbrio entre simplicidade, eficiência de memória e desempenho computacional. Para aplicações típicas, com número moderado de locks e threads, esta implementação oferece um bom equilíbrio.
+
+Para cenários de alta escala, algumas otimizações poderiam ser consideradas:
+\begin{itemize}
+    \item Utilização de tabelas hash para acesso mais rápido a nós e contextos de thread
+    \item Granularidade mais fina de locks para reduzir contenção no mutex global
+    \item Algoritmos incrementais de detecção de ciclos para evitar verificações completas do grafo
+\end{itemize}
+
+No entanto, estas otimizações aumentariam significativamente a complexidade da implementação e foram consideradas além do escopo deste projeto inicial.

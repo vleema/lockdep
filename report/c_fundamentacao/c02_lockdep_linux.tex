@@ -1,0 +1,90 @@
+\section{Lockdep do Kernel Linux}\label{sec:lockdep_linux}
+
+\subsection{Visão Geral}
+
+O Lockdep (Lock Dependency Validator) é uma ferramenta de verificação dinâmica desenvolvida para o kernel Linux por Ingo Molnar em 2006. Seu objetivo principal é detectar potenciais deadlocks no código do kernel, mesmo em caminhos de execução que raramente ocorrem durante o uso normal do sistema. Desde sua introdução, o Lockdep tornou-se uma ferramenta essencial no desenvolvimento do kernel Linux, ajudando a identificar e corrigir inúmeros bugs de sincronização.
+
+\subsection{Princípios de Funcionamento}
+
+O Lockdep baseia-se na premissa de que deadlocks podem ser evitados se todas as travas forem adquiridas em uma ordem consistente. Em vez de tentar detectar deadlocks reais durante a execução, o Lockdep identifica violações nas regras de ordenação que poderiam potencialmente levar a deadlocks.
+
+Os principais conceitos do Lockdep incluem:
+
+\begin{itemize}
+    \item \textbf{Classes de locks}: O Lockdep não rastreia instâncias individuais de locks, mas sim classes de locks. Locks da mesma classe são considerados equivalentes em termos de ordenação.
+
+    \item \textbf{Estados de aquisição}: Cada lock pode ser adquirido em diferentes contextos (por exemplo, com ou sem interrupções habilitadas), e cada combinação é tratada como um estado distinto.
+
+    \item \textbf{Grafo de dependências}: O Lockdep mantém um grafo direcionado onde os vértices são classes de locks e as arestas representam a ordem de aquisição observada.
+
+    \item \textbf{Verificação de ciclos}: Periodicamente, o Lockdep verifica o grafo de dependências em busca de ciclos, que indicariam uma potencial violação de ordenação.
+\end{itemize}
+
+\subsection{Implementação no Kernel}
+
+No kernel Linux, o Lockdep é implementado como um subsistema que intercepta todas as operações de aquisição e liberação de locks. Quando ativado (geralmente em compilações de depuração), ele:
+
+\begin{enumerate}
+    \item Registra cada operação de lock/unlock no sistema
+    \item Identifica o contexto de aquisição (interrupções habilitadas/desabilitadas, preempção, etc.)
+    \item Atualiza o grafo de dependências com base nas ordens de aquisição observadas
+    \item Realiza verificações de ciclos e outras regras de consistência
+    \item Emite alertas detalhados quando detecta violações potenciais
+\end{enumerate}
+
+O Lockdep usa extensivamente a instrumentação do kernel, incluindo hooks em todas as primitivas de sincronização como mutexes, spinlocks, rwlocks, entre outros.
+
+\subsection{Regras de Validação}
+
+O Lockdep realiza diversas verificações além da simples detecção de ciclos:
+
+\begin{itemize}
+    \item \textbf{Verificação de hardirqs-safe}: Garante que locks adquiridos com interrupções desabilitadas não sejam depois adquiridos com interrupções habilitadas.
+
+    \item \textbf{Verificação de softirqs-safe}: Similar à verificação anterior, mas para interrupções de software (softirqs).
+
+    \item \textbf{Recorrência de lock}: Detecta quando o mesmo lock é adquirido recursivamente sem suporte para recursão.
+
+    \item \textbf{Locks órfãos}: Identifica locks que foram adquiridos mas nunca liberados por um determinado caminho de execução.
+\end{itemize}
+
+\subsection{Saída de Diagnóstico}
+
+Quando o Lockdep detecta uma violação potencial, ele gera uma saída de diagnóstico detalhada que inclui:
+
+\begin{itemize}
+    \item O tipo de violação detectada
+    \item As classes de locks envolvidas
+    \item O caminho de dependência que forma o ciclo
+    \item Stacktraces completos dos pontos onde cada lock foi adquirido
+    \item Contextos de aquisição (estados de interrupção, preempção, etc.)
+\end{itemize}
+
+Esta informação detalhada permite que os desenvolvedores identifiquem rapidamente a causa raiz do problema e determinem a melhor maneira de corrigir a violação.
+
+\subsection{Limitações}
+
+Apesar de sua eficácia, o Lockdep possui algumas limitações:
+
+\begin{itemize}
+    \item \textbf{Overhead de execução}: Quando ativado, o Lockdep introduz uma sobrecarga significativa devido à instrumentação e análise contínua.
+
+    \item \textbf{Falsos positivos}: Em certos cenários complexos, o Lockdep pode reportar violações que não resultariam em deadlocks reais.
+
+    \item \textbf{Cobertura limitada a caminhos executados}: O Lockdep só pode analisar caminhos de código que são efetivamente executados durante o teste.
+
+    \item \textbf{Foco em primitivas de sincronização}: O Lockdep foi projetado especificamente para detectar problemas com locks, não abordando outros tipos de problemas de concorrência.
+\end{itemize}
+
+\subsection{Relevância para Nosso Projeto}
+
+O Lockdep do kernel Linux serve como inspiração para nosso projeto por várias razões:
+
+\begin{itemize}
+    \item Sua abordagem proativa de detecção de problemas antes que ocorram
+    \item O uso de grafos de dependência para modelar relações entre locks
+    \item A técnica de verificação de consistência nas ordens de aquisição
+    \item O foco em fornecer diagnósticos detalhados quando problemas são detectados
+\end{itemize}
+
+Nossa implementação adapta estes conceitos para um ambiente de espaço do usuário, permitindo que desenvolvedores de aplicações se beneficiem de técnicas similares às utilizadas pelos desenvolvedores do kernel Linux.

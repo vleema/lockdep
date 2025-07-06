@@ -6,13 +6,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "graph.h"
 #include "lockdep.h"
 
 bool lockdep_enabled = true;
 
 // Global lock graph state
-static lock_node_t* lock_graph = NULL;
-static dependency_edge_t* dependencies = NULL;
+static graph_t* dependency_graph = NULL;
 static thread_context_t* thread_contexts = NULL;
 
 // Mutex to protect the lock graph's internal state
@@ -20,10 +20,8 @@ static pthread_mutex_t lockdep_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Forward declarations for internal functions
 static thread_context_t* get_thread_context(void);
-static lock_node_t* find_or_create_lock_node(void* lock_addr);
-static bool check_cycle_from(lock_node_t* start, lock_node_t* target, bool* visited);
-static bool add_dependency(lock_node_t* from, lock_node_t* to);
 static void print_backtrace(void);
+static const char* format_ptr(void* ptr);
 
 void lockdep_init(void) {
     const char* env = getenv("LOCKDEP_DISABLE");
@@ -32,26 +30,23 @@ void lockdep_init(void) {
         return;
     }
 
+    // Initialize the dependency graph
+    dependency_graph = graph_create();
+    if (!dependency_graph) {
+        fprintf(stderr, "[LOCKDEP] Failed to create dependency graph\n");
+        exit(1);
+    }
+
     fprintf(stderr, "[LOCKDEP] Lockdep initialized\n");
 }
 
 void lockdep_cleanup(void) {
     pthread_mutex_lock(&lockdep_mutex);
     
-    // Free lock nodes
-    lock_node_t* node = lock_graph;
-    while (node) {
-        lock_node_t* next = node->next;
-        free(node);
-        node = next;
-    }
-    
-    // Free dependencies
-    dependency_edge_t* edge = dependencies;
-    while (edge) {
-        dependency_edge_t* next = edge->next;
-        free(edge);
-        edge = next;
+    // Destroy the dependency graph
+    if (dependency_graph) {
+        graph_destroy(dependency_graph);
+        dependency_graph = NULL;
     }
     
     // Free thread contexts and their held locks
@@ -71,15 +66,13 @@ void lockdep_cleanup(void) {
         ctx = next_ctx;
     }
     
-    lock_graph = NULL;
-    dependencies = NULL;
     thread_contexts = NULL;
     
     pthread_mutex_unlock(&lockdep_mutex);
 }
 
 bool lockdep_acquire_lock(void* lock_addr) {
-    if (!lockdep_enabled) {
+    if (!lockdep_enabled || !dependency_graph) {
         return true;
     }
     
@@ -89,7 +82,7 @@ bool lockdep_acquire_lock(void* lock_addr) {
            (unsigned long)pthread_self(), lock_addr);
     
     // Get or create lock node for this lock address
-    lock_node_t* lock_node = find_or_create_lock_node(lock_addr);
+    graph_node_t* lock_node = graph_find_or_create_node(dependency_graph, lock_addr);
     
     // Get thread context
     thread_context_t* thread_ctx = get_thread_context();
@@ -97,14 +90,15 @@ bool lockdep_acquire_lock(void* lock_addr) {
     // Check if we already have locks held and need to add dependencies
     if (thread_ctx->held_locks != NULL) {
         // The most recently acquired lock should have a dependency on this new lock
-        lock_node_t* prev_lock = thread_ctx->held_locks->lock;
+        graph_node_t* prev_lock_node = thread_ctx->held_locks->lock;
         
         // Add dependency: prev_lock -> lock_node
-        if (!add_dependency(prev_lock, lock_node)) {
+        if (graph_would_create_cycle(dependency_graph, prev_lock_node, lock_node)) {
             // Dependency would create a cycle - potential deadlock!
+            void* prev_lock_addr = graph_node_get_id(prev_lock_node);
             fprintf(stderr, "[LOCKDEP] WARNING: Lock order violation detected!\n");
             fprintf(stderr, "[LOCKDEP] Thread %lu attempting to acquire %p while holding %p\n",
-                    (unsigned long)pthread_self(), lock_addr, prev_lock->lock_addr);
+                    (unsigned long)pthread_self(), lock_addr, prev_lock_addr);
             fprintf(stderr, "[LOCKDEP] This violates previously observed lock ordering and may lead to deadlocks.\n");
             print_backtrace();
             
@@ -117,6 +111,9 @@ bool lockdep_acquire_lock(void* lock_addr) {
             } else {
                 fprintf(stderr, "[LOCKDEP] Warning only: No circular dependency yet, but lock order inconsistent\n");
             }
+        } else {
+            // Add the dependency to the graph
+            graph_add_edge(dependency_graph, prev_lock_node, lock_node);
         }
     }
     
@@ -138,7 +135,7 @@ bool lockdep_acquire_lock(void* lock_addr) {
 }
 
 void lockdep_release_lock(void* lock_addr) {
-    if (!lockdep_enabled) {
+    if (!lockdep_enabled || !dependency_graph) {
         return;
     }
     
@@ -153,7 +150,8 @@ void lockdep_release_lock(void* lock_addr) {
     // Find and remove the lock from the thread's held locks stack
     held_lock_t** curr = &thread_ctx->held_locks;
     while (*curr) {
-        if ((*curr)->lock->lock_addr == lock_addr) {
+        void* curr_lock_addr = graph_node_get_id((*curr)->lock);
+        if (curr_lock_addr == lock_addr) {
             held_lock_t* to_free = *curr;
             *curr = (*curr)->next;
             free(to_free);
@@ -167,38 +165,16 @@ void lockdep_release_lock(void* lock_addr) {
 }
 
 bool lockdep_check_deadlock(void) {
-    if (!lockdep_enabled) {
+    if (!lockdep_enabled || !dependency_graph) {
         return false;
     }
     
     pthread_mutex_lock(&lockdep_mutex);
     
-    bool deadlock_detected = false;
+    bool deadlock_detected = graph_has_cycle(dependency_graph);
     
-    // Allocate visited array for each lock node
-    int node_count = 0;
-    lock_node_t* node;
-    for (node = lock_graph; node != NULL; node = node->next) {
-        node_count++;
-    }
-    
-    // For each lock, check if there's a path back to itself
-    for (node = lock_graph; node != NULL; node = node->next) {
-        bool* visited = calloc(node_count, sizeof(bool));
-        if (!visited) {
-            perror("[LOCKDEP] Failed to allocate memory for deadlock detection");
-            continue;
-        }
-        
-        if (check_cycle_from(node, node, visited)) {
-            fprintf(stderr, "[LOCKDEP] Deadlock potential: Found cycle starting at lock %p\n", 
-                    node->lock_addr);
-            deadlock_detected = true;
-            free(visited);
-            break;
-        }
-        
-        free(visited);
+    if (deadlock_detected) {
+        fprintf(stderr, "[LOCKDEP] Deadlock potential: Cycle detected in lock dependency graph\n");
     }
     
     pthread_mutex_unlock(&lockdep_mutex);
@@ -206,7 +182,7 @@ bool lockdep_check_deadlock(void) {
 }
 
 void lockdep_print_dependencies(void) {
-    if (!lockdep_enabled) {
+    if (!lockdep_enabled || !dependency_graph) {
         return;
     }
     
@@ -214,12 +190,8 @@ void lockdep_print_dependencies(void) {
     
     printf("\n[LOCKDEP] === Lock Dependency Graph ===\n");
     
-    // Print all edges in the dependency graph
-    dependency_edge_t* edge = dependencies;
-    while (edge) {
-        printf("[LOCKDEP] %p -> %p\n", edge->from->lock_addr, edge->to->lock_addr);
-        edge = edge->next;
-    }
+    // Print the graph
+    graph_print(dependency_graph, format_ptr);
     
     // Print all thread contexts and their held locks
     printf("\n[LOCKDEP] === Thread Lock States ===\n");
@@ -230,7 +202,8 @@ void lockdep_print_dependencies(void) {
         
         held_lock_t* held = ctx->held_locks;
         while (held) {
-            printf("%p ", held->lock->lock_addr);
+            void* lock_addr = graph_node_get_id(held->lock);
+            printf("%p ", lock_addr);
             held = held->next;
         }
         printf("\n");
@@ -272,104 +245,13 @@ static thread_context_t* get_thread_context(void) {
     return ctx;
 }
 
-// Helper function to find or create a lock node
-static lock_node_t* find_or_create_lock_node(void* lock_addr) {
-    // Check if lock already exists
-    lock_node_t* node = lock_graph;
-    while (node) {
-        if (node->lock_addr == lock_addr) {
-            return node;
-        }
-        node = node->next;
-    }
-    
-    // Create new lock node
-    node = malloc(sizeof(lock_node_t));
-    if (!node) {
-        perror("[LOCKDEP] Failed to allocate memory for lock node");
-        return NULL;
-    }
-    
-    node->lock_addr = lock_addr;
-    node->next = lock_graph;
-    lock_graph = node;
-    
-    return node;
-}
 
-// Helper function to check for cycles in the dependency graph using DFS
-static bool check_cycle_from(lock_node_t* current, lock_node_t* target, bool* visited) {
-    // Find current node's index
-    int current_idx = 0;
-    lock_node_t* node = lock_graph;
-    while (node != current) {
-        current_idx++;
-        node = node->next;
-    }
-    
-    // If we've already visited this node in this DFS traversal, skip it
-    if (visited[current_idx]) {
-        return false;
-    }
-    
-    // Mark current node as visited
-    visited[current_idx] = true;
-    
-    // Check all outgoing edges from current node
-    dependency_edge_t* edge = dependencies;
-    while (edge) {
-        if (edge->from == current) {
-            // If we found our target, we have a cycle
-            if (edge->to == target) {
-                return true;
-            }
-            
-            // Continue DFS from the destination node
-            if (check_cycle_from(edge->to, target, visited)) {
-                return true;
-            }
-        }
-        edge = edge->next;
-    }
-    
-    return false;
-}
 
-// Helper function to add a dependency between locks
-static bool add_dependency(lock_node_t* from, lock_node_t* to) {
-    // First check if this dependency already exists
-    dependency_edge_t* edge = dependencies;
-    while (edge) {
-        if (edge->from == from && edge->to == to) {
-            return true; // Dependency already exists
-        }
-        edge = edge->next;
-    }
-    
-    // Add the new dependency
-    edge = malloc(sizeof(dependency_edge_t));
-    if (!edge) {
-        perror("[LOCKDEP] Failed to allocate memory for dependency edge");
-        return true; // Continue without adding in case of allocation failure
-    }
-    
-    edge->from = from;
-    edge->to = to;
-    edge->next = dependencies;
-    dependencies = edge;
-    
-    // Check if this new dependency creates a cycle
-    bool* visited = calloc(1000, sizeof(bool)); // Assuming max 1000 locks for simplicity
-    if (!visited) {
-        perror("[LOCKDEP] Failed to allocate memory for cycle detection");
-        return true; // Continue without checking in case of allocation failure
-    }
-    
-    // Check if there's a path from 'to' back to 'from', which would create a cycle
-    bool has_cycle = check_cycle_from(to, from, visited);
-    
-    free(visited);
-    return !has_cycle; // Return false if cycle exists
+// Helper function to format a pointer as a string for graph printing
+static const char* format_ptr(void* ptr) {
+    static char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%p", ptr);
+    return buffer;
 }
 
 // Helper function to print a backtrace when lock order violations are detected

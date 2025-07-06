@@ -1,0 +1,24 @@
+\section{Contextualização}\label{sec:contexto}
+
+Em programação concorrente, o uso de mutexes (mutual exclusion) é essencial para garantir que apenas uma thread tenha acesso a recursos compartilhados por vez. No entanto, quando múltiplas threads tentam adquirir múltiplos mutexes em ordens diferentes, podem ocorrer deadlocks - uma situação onde duas ou mais threads ficam permanentemente bloqueadas, cada uma esperando por um recurso que outra possui.
+
+Um exemplo clássico de deadlock ocorre quando:
+\begin{itemize}
+    \item Thread A adquire mutex1 e tenta adquirir mutex2
+    \item Thread B adquire mutex2 e tenta adquirir mutex1
+\end{itemize}
+
+Este padrão, conhecido como AB-BA, cria uma dependência circular entre as threads, resultando em um deadlock. Em sistemas reais, estes deadlocks podem ser difíceis de reproduzir e diagnosticar devido à sua natureza dependente de timing.
+
+O problema se torna ainda mais complexo em sistemas com grande número de threads e recursos compartilhados. Muitos deadlocks só ocorrem em condições específicas de carga ou timing, tornando-os particularmente difíceis de detectar durante o desenvolvimento e testes.
+
+Diversas abordagens foram desenvolvidas para lidar com deadlocks, incluindo:
+
+\begin{itemize}
+    \item \textbf{Prevenção}: garantir que pelo menos uma das condições necessárias para deadlock não ocorra;
+    \item \textbf{Evitação}: alocar recursos dinamicamente de forma a evitar estados inseguros;
+    \item \textbf{Detecção}: monitorar o sistema para identificar quando deadlocks ocorrem;
+    \item \textbf{Recuperação}: liberar recursos quando deadlocks são detectados.
+\end{itemize}
+
+Este trabalho foca principalmente na detecção antecipada de potenciais deadlocks através da análise da ordem de aquisição de locks e da construção de grafos de dependência entre recursos.

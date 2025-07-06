@@ -1,0 +1,79 @@
+\section{Deadlocks}\label{sec:deadlocks}
+
+\subsection{Definição e Condições Necessárias}
+
+Um deadlock é uma situação em que dois ou mais processos ou threads estão bloqueados permanentemente, cada um esperando que o outro libere um recurso. Em sistemas operacionais e programação concorrente, deadlocks representam um problema crítico que pode levar à completa paralisação de partes do sistema.
+
+Para que um deadlock ocorra, quatro condições (conhecidas como condições de Coffman) devem ser satisfeitas simultaneamente:
+
+\begin{enumerate}
+    \item \textbf{Exclusão Mútua}: Pelo menos um recurso deve estar em um estado não compartilhável, ou seja, apenas um processo pode utilizá-lo por vez.
+
+    \item \textbf{Posse e Espera}: Um processo deve estar segurando pelo menos um recurso enquanto espera para adquirir recursos adicionais que estão sendo mantidos por outros processos.
+
+    \item \textbf{Não Preempção}: Os recursos não podem ser removidos à força de um processo; eles devem ser liberados voluntariamente.
+
+    \item \textbf{Espera Circular}: Deve existir um conjunto de processos \{P$_1$, P$_2$, ..., P$_n$\} onde P$_1$ está esperando por um recurso que P$_2$ possui, P$_2$ está esperando por um recurso que P$_3$ possui, e assim por diante, até P$_n$ estar esperando por um recurso que P$_1$ possui.
+\end{enumerate}
+
+Se qualquer uma dessas condições não for satisfeita, o deadlock não pode ocorrer.
+
+\subsection{O Problema dos Filósofos Jantantes}
+
+Um exemplo clássico de deadlock é o problema dos filósofos jantantes, proposto por Dijkstra. Neste problema, cinco filósofos sentam-se ao redor de uma mesa, com um garfo entre cada par de filósofos. Para comer, um filósofo precisa de dois garfos - os que estão à sua direita e à sua esquerda. Se cada filósofo pegar o garfo à sua esquerda simultaneamente, todos estarão esperando pelo garfo à sua direita, que está sendo segurado por outro filósofo, criando um deadlock.
+
+\subsection{Deadlocks em Sistemas Multithreaded}
+
+Em sistemas multithreaded que utilizam mutexes para sincronização, o padrão mais comum de deadlock é o "AB-BA":
+
+\begin{itemize}
+    \item Thread A adquire mutex M1
+    \item Thread B adquire mutex M2
+    \item Thread A tenta adquirir M2 (e é bloqueada esperando)
+    \item Thread B tenta adquirir M1 (e é bloqueada esperando)
+\end{itemize}
+
+Neste cenário, ambas as threads estão permanentemente bloqueadas, cada uma esperando que a outra libere um mutex.
+
+\subsection{Detecção de Deadlocks}
+
+A detecção de deadlocks pode ser realizada através de diferentes abordagens:
+
+\subsubsection{Algoritmo do Banqueiro}
+
+O algoritmo do banqueiro, desenvolvido por Dijkstra, é utilizado para determinar se a alocação de um recurso levará o sistema a um estado seguro ou inseguro. Embora não detecte deadlocks diretamente, ele pode preveni-los garantindo que o sistema nunca entre em um estado inseguro.
+
+\subsubsection{Detecção baseada em Grafos de Alocação de Recursos}
+
+Esta abordagem utiliza um grafo direcionado onde:
+\begin{itemize}
+    \item Vértices representam processos e recursos
+    \item Arestas representam alocações ou solicitações de recursos
+    \item Um ciclo no grafo indica um potencial deadlock
+\end{itemize}
+
+Utilizando algoritmos como Busca em Profundidade (DFS), é possível detectar ciclos no grafo, indicando situações de deadlock.
+
+\subsubsection{Técnica Timeout}
+
+Uma abordagem simples é implementar timeouts nas operações de aquisição de locks. Se uma thread não conseguir adquirir um lock dentro de um determinado período, ela libera todos os recursos e tenta novamente após um tempo aleatório.
+
+\subsubsection{Análise de Ordem de Aquisição (Lockdep)}
+
+Esta técnica, inspirada pelo lockdep do kernel Linux, monitora a ordem em que os locks são adquiridos por diferentes threads. Se detectar inconsistências nesta ordem (por exemplo, thread A adquire locks na ordem L1→L2 e thread B na ordem L2→L1), alerta sobre um potencial deadlock antes mesmo que ele ocorra.
+
+\subsection{Prevenção e Mitigação}
+
+Prevenir deadlocks completamente geralmente implica em eliminar pelo menos uma das condições de Coffman:
+
+\begin{itemize}
+    \item \textbf{Quebrar a exclusão mútua}: Nem sempre possível devido a requisitos de consistência.
+
+    \item \textbf{Evitar posse e espera}: Adquirir todos os recursos necessários de uma só vez ou não adquirir recursos adicionais quando já possuir algum.
+
+    \item \textbf{Permitir preempção}: Implementar timeouts e mecanismos de "tentativa e recuo" para liberação de recursos em caso de impasse.
+
+    \item \textbf{Prevenir espera circular}: Estabelecer uma ordem global para aquisição de recursos e garantir que todos os processos sigam esta ordem.
+\end{itemize}
+
+No contexto de programação multithreaded com mutexes, a abordagem mais comum é garantir que todas as threads adquiram múltiplos locks sempre na mesma ordem global, eliminando assim a possibilidade de espera circular.

@@ -1,0 +1,126 @@
+\section{Interposição de Funções}\label{sec:interposicao}
+
+\subsection{Conceito}
+
+A interposição de funções é uma técnica poderosa que permite interceptar chamadas a funções de biblioteca antes que elas cheguem ao seu destino original. Esta técnica possibilita a inserção de código adicional antes e/ou depois da execução da função original, sem modificar o código-fonte da aplicação nem da biblioteca em questão.
+
+Em essência, a interposição de funções cria uma camada intermediária entre o código chamador e a implementação real da função, permitindo:
+\begin{itemize}
+    \item Monitorar chamadas a determinadas funções
+    \item Modificar parâmetros de entrada
+    \item Alterar valores de retorno
+    \item Executar ações adicionais antes ou depois da chamada original
+    \item Impedir completamente a execução da função original
+\end{itemize}
+
+\subsection{Mecanismos de Interposição em Sistemas Unix-like}
+
+Em sistemas Unix-like, vários mecanismos permitem a interposição de funções:
+
+\subsubsection{LD\_PRELOAD}
+
+O mecanismo mais comum para interposição de funções em tempo de execução é através da variável de ambiente \texttt{LD\_PRELOAD}. Esta variável permite especificar bibliotecas compartilhadas que serão carregadas antes de quaisquer outras, dando a elas prioridade na resolução de símbolos.
+
+O processo funciona da seguinte forma:
+
+\begin{enumerate}
+    \item O loader dinâmico (\texttt{ld.so} ou \texttt{ld-linux.so}) verifica a variável \texttt{LD\_PRELOAD}
+    \item Carrega as bibliotecas especificadas antes das bibliotecas padrão
+    \item Ao resolver símbolos, prefere implementações encontradas nas bibliotecas pré-carregadas
+    \item Funções com o mesmo nome nas bibliotecas pré-carregadas "substituem" as funções originais
+\end{enumerate}
+
+Exemplo de uso:
+\begin{verbatim}
+$ LD_PRELOAD=./libminhaintercep.so ./meuPrograma
+\end{verbatim}
+
+\subsubsection{Funções dlsym() e RTLD\_NEXT}
+
+Para que a interposição seja útil, geralmente é necessário não apenas substituir a função original, mas também chamá-la após realizar alguma operação. Isso é possível através da função \texttt{dlsym()} com o identificador especial \texttt{RTLD\_NEXT}, que busca a "próxima" ocorrência de um símbolo na ordem de carregamento de bibliotecas.
+
+\begin{lstlisting}[language=C, caption={Exemplo de interposição de função}]
+#include <dlfcn.h>
+#include <stdio.h>
+
+// Ponteiro para a função original
+static int (*original_open)(const char *path, int oflag, ...) = NULL;
+
+// Nossa versão interposta da função open()
+int open(const char *path, int oflag, ...) {
+    if (!original_open) {
+        // Obtém a função original
+        original_open = dlsym(RTLD_NEXT, "open");
+    }
+
+    printf("Interceptando chamada a open() para o arquivo: %s\n", path);
+
+    // Chama a função original e retorna seu resultado
+    return original_open(path, oflag);
+}
+\end{lstlisting}
+
+\subsection{Atributos de Construtor e Destrutor}
+
+O GCC e outros compiladores C suportam os atributos \texttt{\_\_attribute\_\_((constructor))} e \texttt{\_\_attribute\_\_((destructor))}, que permitem que funções sejam executadas automaticamente quando uma biblioteca compartilhada é carregada ou descarregada:
+
+\begin{lstlisting}[language=C, caption={Uso de construtor e destrutor em biblioteca compartilhada}]
+__attribute__((constructor))
+static void inicializar() {
+    printf("Biblioteca carregada!\n");
+    // Código de inicialização
+}
+
+__attribute__((destructor))
+static void finalizar() {
+    printf("Biblioteca sendo descarregada!\n");
+    // Código de limpeza
+}
+\end{lstlisting}
+
+Estes atributos são particularmente úteis em interposição de funções para inicializar estruturas de dados, carregar configurações ou registrar a presença da biblioteca interposta.
+
+\subsection{Aplicações da Interposição de Funções}
+
+A interposição de funções é utilizada em diversos contextos:
+
+\begin{itemize}
+    \item \textbf{Instrumentação}: adicionar contadores, logs ou traces a chamadas de função sem modificar o programa original
+    \item \textbf{Sandboxing}: restringir ou filtrar operações potencialmente perigosas
+    \item \textbf{Emulação}: prover implementações alternativas de APIs para compatibilidade
+    \item \textbf{Debugging}: interceptar chamadas para análise de comportamento
+    \item \textbf{Monitoramento de desempenho}: medir tempo de execução ou padrões de uso
+    \item \textbf{Detecção de vazamento de memória}: como implementado por ferramentas como Valgrind e ASAN
+\end{itemize}
+
+\subsection{Limitações e Desafios}
+
+A interposição de funções apresenta algumas limitações importantes:
+
+\begin{itemize}
+    \item \textbf{Funções vinculadas estaticamente}: Não é possível interceptar chamadas a funções vinculadas estaticamente ao executável.
+    \item \textbf{Chamadas diretas}: Funções inline ou chamadas diretas otimizadas pelo compilador não passam pelo mecanismo de resolução dinâmica.
+    \item \textbf{Chamadas internas de biblioteca}: Chamadas de função dentro da mesma biblioteca geralmente não são afetadas.
+    \item \textbf{Efeitos colaterais}: A interposição pode alterar o comportamento esperado do programa de maneiras sutis.
+    \item \textbf{Recursão infinita}: Se não tratada adequadamente, a função interposta pode chamar a si mesma recursivamente.
+\end{itemize}
+
+\subsection{Interposição de Pthread Mutex no Contexto de Lockdep}
+
+No contexto de nosso projeto de detecção de deadlocks, a interposição de funções é particularmente útil para interceptar chamadas às funções de mutex da biblioteca pthread:
+
+\begin{itemize}
+    \item \texttt{pthread\_mutex\_lock()}
+    \item \texttt{pthread\_mutex\_unlock()}
+    \item \texttt{pthread\_mutex\_trylock()}
+\end{itemize}
+
+Ao interceptar estas chamadas, podemos:
+\begin{itemize}
+    \item Rastrear quais mutexes são adquiridos e liberados por cada thread
+    \item Construir o grafo de dependências entre mutexes
+    \item Detectar potenciais deadlocks antes que ocorram
+    \item Fornecer informações de diagnóstico quando problemas são detectados
+\end{itemize}
+
+Esta abordagem tem a vantagem significativa de não requerer modificações no código-fonte das aplicações monitoradas, permitindo que o sistema de detecção de deadlocks seja aplicado a praticamente qualquer programa que utilize mutexes da biblioteca pthread.

@@ -1,0 +1,82 @@
+\section{Visão Geral}\label{sec:visao_geral}
+
+O sistema implementado para detecção de deadlocks e violação da ordem de aquisição de travas segue uma arquitetura modular, separando claramente as responsabilidades entre diferentes componentes. Esta seção apresenta uma visão geral da arquitetura, destacando seus principais componentes e suas interações.
+
+\subsection{Arquitetura do Sistema}
+
+A arquitetura do sistema é composta por três componentes principais:
+
+\begin{enumerate}
+    \item \textbf{Biblioteca de Análise de Grafos}: Responsável pela representação e manipulação do grafo de dependências entre locks, incluindo algoritmos para detecção de ciclos.
+
+    \item \textbf{Núcleo de Detecção (lockdep\_core)}: Implementa a lógica central de monitoramento de locks, gerenciamento de contextos de thread e detecção de violações.
+
+    \item \textbf{Camada de Interposição (pthread\_interpose)}: Intercepta chamadas às funções de mutex da biblioteca pthread e as redireciona para o núcleo de detecção.
+\end{enumerate}
+
+Esta separação de responsabilidades permite que cada componente seja desenvolvido, testado e mantido de forma independente, facilitando modificações e extensões futuras.
+
+\begin{figure}[h]
+    \centering
+    % Placeholder para diagrama da arquitetura
+    % \includegraphics[width=0.8\textwidth]{diagrama_arquitetura.png}
+    \caption{Arquitetura do sistema de detecção de deadlocks}
+    \label{fig:arquitetura}
+\end{figure}
+
+\subsection{Fluxo de Execução}
+
+O fluxo de execução do sistema segue os seguintes passos:
+
+\begin{enumerate}
+    \item A biblioteca compartilhada contendo o sistema é carregada antes de qualquer outra biblioteca através do mecanismo LD\_PRELOAD.
+
+    \item As funções construtoras são executadas, inicializando as estruturas de dados necessárias para o sistema de detecção.
+
+    \item Quando uma aplicação chama funções como \texttt{pthread\_mutex\_lock()}, a versão interposta desta função é executada em vez da implementação original.
+
+    \item A função interposta notifica o núcleo de detecção sobre a operação de lock, que por sua vez:
+    \begin{itemize}
+        \item Atualiza o grafo de dependências entre locks
+        \item Verifica se a operação viola alguma ordem de aquisição previamente estabelecida
+        \item Analisa o grafo em busca de ciclos que indiquem potenciais deadlocks
+    \end{itemize}
+
+    \item Se nenhuma violação for detectada, a função original é chamada para realizar a operação de lock real.
+
+    \item Se uma violação for detectada, o sistema pode:
+    \begin{itemize}
+        \item Emitir um aviso detalhando o problema
+        \item Recusar a operação de lock, retornando um código de erro apropriado
+        \item Coletar informações de diagnóstico como stacktrace para auxiliar na depuração
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Integração com Aplicações}
+
+Uma característica fundamental do sistema é sua transparência para as aplicações monitoradas. O sistema:
+
+\begin{itemize}
+    \item Não requer modificações no código-fonte das aplicações
+    \item Pode ser ativado ou desativado através de variáveis de ambiente
+    \item Introduz um overhead mínimo quando usado em modo de produção
+    \item Fornece diagnósticos detalhados quando uma violação é detectada
+\end{itemize}
+
+Esta abordagem facilita a adoção do sistema tanto em ambientes de desenvolvimento quanto de produção, permitindo que desenvolvedores identifiquem e corrijam problemas de sincronização antes que causem falhas reais.
+
+\subsection{Considerações de Design}
+
+No desenvolvimento do sistema, algumas considerações importantes de design incluem:
+
+\begin{itemize}
+    \item \textbf{Eficiência}: Minimizar o overhead introduzido pelo monitoramento, especialmente em operações frequentes como aquisição e liberação de locks.
+
+    \item \textbf{Precisão}: Garantir que as violações detectadas representem problemas reais, minimizando falsos positivos.
+
+    \item \textbf{Escalabilidade}: Suportar aplicações com grande número de threads e locks sem degradação significativa de desempenho.
+
+    \item \textbf{Robustez}: O próprio sistema de detecção não deve introduzir novos problemas de concorrência ou deadlocks.
+\end{itemize}
+
+Nas seções seguintes, detalhamos cada componente do sistema, apresentando suas estruturas de dados, algoritmos e técnicas de implementação.

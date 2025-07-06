@@ -1,0 +1,21 @@
+\section{Objetivos}\label{sec:objetivos}
+
+O objetivo principal deste projeto é desenvolver um sistema para detectar potenciais deadlocks antes que eles ocorram em aplicações multithreaded. Especificamente, buscamos:
+
+\begin{enumerate}
+    \item Implementar um sistema de monitoramento de locks que não requeira modificação do código-fonte das aplicações monitoradas;
+
+    \item Desenvolver e implementar algoritmos para detecção de deadlocks através de duas abordagens complementares:
+    \begin{itemize}
+        \item Construção e análise de grafo de espera por recursos, detectando ciclos que representam deadlocks reais;
+        \item Verificação de consistência na ordem de aquisição de travas, identificando padrões que poderiam levar a deadlocks;
+    \end{itemize}
+
+    \item Criar uma infraestrutura que permita a fácil integração do sistema de detecção com aplicações existentes;
+
+    \item Minimizar o overhead de execução do sistema de detecção, garantindo que possa ser utilizado não apenas em ambiente de desenvolvimento, mas também em ambientes de produção;
+
+    \item Fornecer informações detalhadas sobre violações detectadas, incluindo backtrace e análise das dependências que levaram ao potencial deadlock.
+\end{enumerate}
+
+Estes objetivos se alinham com a necessidade de ferramentas que auxiliem no desenvolvimento de software concorrente robusto, permitindo que desenvolvedores identifiquem problemas de sincronização complexos antes que se manifestem como falhas em produção.

@@ -1,4 +1,4 @@
-all:
+all: clean
 	lualatex main.tex
 	make clean
 clean:

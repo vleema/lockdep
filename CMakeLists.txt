@@ -20,6 +20,11 @@ set(COMPILE_OPTIONS
 
 set(LINK_OPTIONS "-fsanitize=address,undefined")
 
+# Graph library sources
+file(GLOB GRAPH_SOURCES
+    "src/graph/*.c"
+)
+
 # Core lockdep library sources
 file(GLOB LOCKDEP_SOURCES
     "src/lockdep/*.c"
@@ -29,6 +34,7 @@ file(GLOB LOCKDEP_SOURCES
 file(GLOB INTERPOSE_SOURCES
     "src/interpose/*.c"
     "src/lockdep/*.c"
+    "src/graph/*.c"
 )
 
 # Test program sources

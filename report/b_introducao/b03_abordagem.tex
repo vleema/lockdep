@@ -1,0 +1,50 @@
+\section{Abordagem}\label{sec:abordagem}
+
+Para atingir os objetivos propostos, nossa abordagem combina conceitos de teoria dos grafos, engenharia de software e sistemas operacionais. A implementação adota as seguintes estratégias:
+
+\subsection{Interposição de Funções}
+
+Utilizamos a técnica de interposição de funções através do mecanismo LD\_PRELOAD do sistema de vinculação dinâmica. Esta abordagem permite interceptar chamadas às funções da biblioteca pthread sem modificar o código fonte das aplicações monitoradas, tornando o sistema transparente e de fácil adoção.
+
+\subsection{Detecção de Deadlocks}
+
+Implementamos duas abordagens complementares para detecção de deadlocks:
+
+\begin{enumerate}
+    \item \textbf{Grafo de espera com detecção de ciclos}:
+    \begin{itemize}
+        \item Construímos um grafo direcionado onde os vértices são mutexes e as arestas representam a ordem de aquisição;
+        \item Utilizamos algoritmo de Busca em Profundidade (DFS) para detectar ciclos neste grafo;
+        \item Um ciclo no grafo indica uma potencial situação de deadlock.
+    \end{itemize}
+
+    \item \textbf{Verificação da ordem de aquisição de travas}:
+    \begin{itemize}
+        \item Mantemos um histórico da ordem em que mutexes são adquiridos por cada thread;
+        \item Detectamos quando uma thread tenta adquirir mutexes em uma ordem inconsistente com padrões previamente observados;
+        \item Alertamos sobre estas violações antes que o deadlock realmente ocorra.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Estruturas de Dados Otimizadas}
+
+Para garantir eficiência e baixo overhead durante o monitoramento, utilizamos estruturas de dados cuidadosamente projetadas:
+
+\begin{itemize}
+    \item Listas ligadas para representação do grafo, permitindo atualizações dinâmicas;
+    \item Tabelas hash para acesso rápido aos nós do grafo;
+    \item Contextos thread-específicos para rastrear o estado de cada thread independentemente.
+\end{itemize}
+
+\subsection{Diagnóstico Detalhado}
+
+Quando uma violação é detectada, o sistema fornece diagnósticos detalhados que incluem:
+
+\begin{itemize}
+    \item Identificação dos locks envolvidos;
+    \item Backtrace completo do ponto de detecção;
+    \item Visualização do estado atual do grafo de dependências;
+    \item Informações sobre a ordem de aquisição recomendada.
+\end{itemize}
+
+Esta abordagem multilateral permite que o sistema detecte efetivamente diferentes padrões de deadlock, incluindo tanto aqueles causados por espera circular direta quanto os decorrentes de violações na ordem de aquisição de locks.

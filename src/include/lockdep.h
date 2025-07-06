@@ -19,37 +19,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct lock_node lock_node_t;
-typedef struct dependency_edge dependency_edge_t;
 typedef struct thread_context thread_context_t;
 
-// Represents all locks known by the lockdep system as a linked list node.
-// Each node uniquely identifies a lock (e.g., by its address) and allows
-// traversal of all registered locks.
-typedef struct lock_node {
-    // Uniquely identifies the lock (e.g., mutex address)
-    void* lock_addr;
-    // For traversal
-    struct lock_node* next;
-} lock_node_t;
-
-// Represents a directed dependency edge in the lock graph.
-// Each edge encodes the ordering "lock A acquired before lock B" and
-// forms a linked list for cycle detection algorithms.
-typedef struct dependency_edge {
-    // Source lock node ("from" lock)
-    lock_node_t* from;
-    // Destination lock node ("to" lock")
-    lock_node_t* to;
-    // Linked list of all dependency edges
-    struct dependency_edge* next;
-} dependency_edge_t;
+// Forward declaration for graph node
+struct graph_node;
+typedef struct graph_node graph_node_t;
 
 // Stack node representing a lock currently held by a thread.
 // Enables tracking of nested lock acquisitions per thread.
 typedef struct held_lock {
-    // The lock being held
-    lock_node_t* lock;
+    // The lock being held (represented as a graph node)
+    graph_node_t* lock;
     // Next lock in the stack (newest lock on top)
     struct held_lock* next;
 } held_lock_t;
