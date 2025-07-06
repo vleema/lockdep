@@ -11,6 +11,7 @@
 #include "pthread_structures.h"
 #include "lock_tracker.h"
 #include "backtrace.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <pthread.h>
 
 // Global variables
 static volatile sig_atomic_t exit_requested = 0;
@@ -134,7 +136,7 @@ static bool initialize_subsystems() {
         fprintf(stderr, "Failed to initialize lock tracker\n");
         return false;
     }
-    
+
     // Set backtrace options
     backtrace_set_use_debug_symbols(verbose);
 
@@ -177,13 +179,13 @@ static void *analysis_thread_func(void *arg) {
     while (!exit_requested) {
         // Sleep for the specified interval
         sleep(analysis_interval);
-        
+
         // Check for deadlocks
         if (lock_tracker_check_deadlocks()) {
             fprintf(stderr, "Deadlock detected! Lock graph state:\n");
             lock_tracker_print_graph();
             lock_tracker_print_thread_locks();
-            
+
             // If we're in detect-only mode, continue running
             if (!detect_only) {
                 fprintf(stderr, "Exiting due to deadlock detection\n");
@@ -192,7 +194,7 @@ static void *analysis_thread_func(void *arg) {
             }
         }
     }
-    
+
     return NULL;
 }
 
@@ -200,14 +202,14 @@ static void *analysis_thread_func(void *arg) {
 static void trace_process() {
     // Register the main thread with the lock tracker
     lock_tracker_register_thread(target_pid);
-    
+
     // Create a pthread to periodically analyze the lock graph
     pthread_t analysis_thread;
     pthread_create(&analysis_thread, NULL, analysis_thread_func, NULL);
-    
+
     // Start time for timeout
     time_t start_time = time(NULL);
-    
+
     // Main tracing loop
     while (!exit_requested) {
         // Check timeout if specified
@@ -215,21 +217,21 @@ static void trace_process() {
             fprintf(stderr, "Timeout reached (%d seconds)\n", timeout_seconds);
             break;
         }
-        
+
         // Wait for the next system call
         bool entering;
         long syscall = ptrace_wait_for_syscall(target_pid, &entering);
-        
+
         if (syscall == -1) {
             // Process likely exited
             fprintf(stderr, "Lost connection to process %d\n", target_pid);
             break;
         }
-        
+
         // Process the system call
         syscall_process(target_pid, syscall, entering);
     }
-    
+
     // Wait for the analysis thread to finish
     pthread_cancel(analysis_thread);
     pthread_join(analysis_thread, NULL);
@@ -240,7 +242,7 @@ int main(int argc, char* argv[]) {
     if (!parse_arguments(argc, argv)) {
         return EXIT_FAILURE;
     }
-    
+
     printf("Monitoring process %d for deadlocks\n", target_pid);
     if (monitor_all_threads) {
         printf("Monitoring all threads\n");
@@ -248,34 +250,34 @@ int main(int argc, char* argv[]) {
     if (timeout_seconds > 0) {
         printf("Will monitor for %d seconds\n", timeout_seconds);
     }
-    
+
     // Set up signal handlers for graceful termination
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signal_handler;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
-    
+
     // Initialize subsystems
     if (!initialize_subsystems()) {
         fprintf(stderr, "Initialization failed\n");
         return EXIT_FAILURE;
     }
-    
+
     // Initialize backtrace subsystem
     if (!backtrace_init()) {
         fprintf(stderr, "Failed to initialize backtrace subsystem\n");
         cleanup_subsystems();
         return EXIT_FAILURE;
     }
-    
+
     // Attach to the target process
     if (!ptrace_attach(target_pid)) {
         fprintf(stderr, "Failed to attach to process %d\n", target_pid);
         cleanup_subsystems();
         return EXIT_FAILURE;
     }
-    
+
     // If requested, attach to all threads
     if (monitor_all_threads) {
         int attached = ptrace_attach_all_threads(target_pid);
@@ -287,27 +289,27 @@ int main(int argc, char* argv[]) {
         }
         printf("Attached to %d threads\n", attached);
     }
-    
+
     // Check for existing deadlocks before starting tracing
     printf("Analyzing process for existing deadlocks...\n");
     analyze_existing_deadlocks(target_pid);
-    
+
     // If analyze_only is true, we're done after checking for existing deadlocks
     if (analyze_only) {
         printf("Existing deadlock analysis completed. Exiting.\n");
         return EXIT_SUCCESS;
     }
-    
+
     // Perform the tracing
     trace_process();
-    
+
     // Clean up
     detach_from_process();
     backtrace_cleanup();
     cleanup_subsystems();
-    
+
     printf("Monitoring complete\n");
-    
+
     return EXIT_SUCCESS;
 }
 
@@ -319,19 +321,19 @@ static void analyze_existing_deadlocks(pid_t pid) {
     const size_t MAX_THREADS = 256;
     thread_backtrace_t backtraces[MAX_THREADS];
     size_t thread_count = 0;
-    
+
     // Capture backtraces from all threads
     if (!backtrace_capture_all_threads(pid, backtraces, MAX_THREADS, &thread_count)) {
         fprintf(stderr, "Failed to capture thread backtraces\n");
         return;
     }
-    
+
     printf("Captured backtraces from %zu threads\n", thread_count);
-    
+
     // Check for deadlocks in the backtraces
     if (backtrace_detect_deadlocks(backtraces, thread_count)) {
         printf("DEADLOCK DETECTED: Process appears to be in a deadlock state!\n");
-        
+
         // Print detailed information about the deadlock
         printf("\n=== Deadlock Information ===\n");
         for (size_t i = 0; i < thread_count; i++) {

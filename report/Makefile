@@ -1,5 +1,6 @@
 all: clean
 	lualatex main.tex
+	lualatex main.tex
 	make clean
 	firefox --new-window main.pdf
 
