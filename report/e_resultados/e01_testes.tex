@@ -1,8 +1,79 @@
 \section{Testes Realizados}
 
-Para validar o sistema, desenvolvemos dois casos de teste principais:
+Para validar o sistema de detecção de deadlocks, desenvolvemos uma suíte abrangente de testes que demonstram diferentes cenários de deadlock, violações de ordem de aquisição e técnicas de mitigação. Esta seção descreve os testes implementados e sua finalidade.
+
+\subsection{Testes Básicos}
 
 \begin{enumerate}
-    \item \textbf{simple\_test.c}: Demonstra a criação de dependências em uma única thread, adquirindo mutexes em uma ordem específica.
-    \item \textbf{deadlock\_test.c}: Simula um cenário clássico de deadlock AB-BA, onde duas threads adquirem mutexes em ordens opostas.
+    \item \textbf{t01\_simple\_lock\_order.c}: Demonstra a criação de dependências em uma única thread, adquirindo mutexes em uma ordem específica (mutex1 → mutex2). Este teste valida a funcionalidade básica de rastreamento de dependências.
+
+    \item \textbf{t02\_classic\_deadlock.c}: Simula o cenário clássico de deadlock AB-BA, onde:
+    \begin{itemize}
+        \item Thread 1 adquire mutex1, e tenta adquirir mutex2
+        \item Thread 2 adquire mutex2, e tenta adquirir mutex1
+    \end{itemize}
+    Este teste demonstra a capacidade do sistema de detectar o padrão mais comum de deadlock em sistemas multithreaded.
 \end{enumerate}
+
+\subsection{Padrões Avançados de Deadlock}
+
+\begin{enumerate}\setcounter{enumi}{2}
+    \item \textbf{t03\_nested\_deadlock.c}: Demonstra um cenário de deadlock com aquisições aninhadas de locks:
+    \begin{itemize}
+        \item Thread 1 adquire mutex1, depois mutex2, e tenta adquirir mutex3
+        \item Thread 2 adquire mutex3 e tenta adquirir mutex1
+    \end{itemize}
+    Este teste verifica a capacidade do sistema de detectar deadlocks em padrões de aninhamento complexos.
+
+    \item \textbf{t04\_circular\_deadlock.c}: Cria um deadlock circular envolvendo três threads:
+    \begin{itemize}
+        \item Thread 1: mutex1 → mutex2
+        \item Thread 2: mutex2 → mutex3
+        \item Thread 3: mutex3 → mutex1
+    \end{itemize}
+    Este teste valida a detecção de ciclos envolvendo mais de duas threads, um cenário mais complexo do que o deadlock AB-BA clássico.
+
+    \item \textbf{t05\_dining\_philosophers.c}: Implementa o problema clássico dos filósofos jantantes, onde cinco filósofos (threads) competem por cinco garfos (mutexes). Este teste demonstra como padrões de alocação de recursos podem levar a deadlocks em sistemas concorrentes.
+
+    \item \textbf{t06\_dynamic\_locks.c}: Testa a detecção de deadlock com locks criados dinamicamente, incluindo locks baseados em arrays, locks criados dentro de threads e locks em estruturas de dados. Verifica se o sistema pode rastrear locks independentemente de como são criados.
+\end{enumerate}
+
+\subsection{Técnicas de Prevenção de Deadlock}
+
+\begin{enumerate}\setcounter{enumi}{6}
+    \item \textbf{t07\_recursive\_locks.c}: Testa o comportamento de mutexes regulares versus mutexes recursivos:
+    \begin{itemize}
+        \item Mutex regular entrará em deadlock quando bloqueado recursivamente pela mesma thread
+        \item Mutex recursivo permite que a mesma thread o adquira múltiplas vezes
+    \end{itemize}
+    Este teste verifica como o sistema lida com padrões de lock recursivo.
+
+    \item \textbf{t08\_deadlock\_avoidance\_trylock.c}: Demonstra como \texttt{pthread\_mutex\_trylock} pode ser usado para evitar deadlocks. Quando o trylock falha, as threads liberam os locks mantidos e tentam novamente mais tarde, evitando deadlock.
+
+    \item \textbf{t09\_deadlock\_avoidance\_timeout.c}: Utiliza \texttt{pthread\_mutex\_timedlock} para detectar potenciais deadlocks. Se a aquisição atinge o timeout, as threads liberam recursos e tentam novamente, demonstrando outra técnica de prevenção de deadlock.
+\end{enumerate}
+
+\subsection{Metodologia de Teste}
+
+Os testes foram executados em duas configurações distintas para validar ambas as abordagens implementadas:
+
+\begin{enumerate}
+    \item \textbf{Abordagem por Interposição}: Utilizando a variável de ambiente LD\_PRELOAD para carregar nossa biblioteca de interposição:
+    \begin{verbatim}
+    LD_PRELOAD=./liblockdep_interpose.so ./t01_simple_lock_order
+    \end{verbatim}
+
+    \item \textbf{Abordagem baseada em ptrace}: Anexando nossa ferramenta ptrace a processos em execução:
+    \begin{verbatim}
+    ./ptrace-lockdep --all-threads ./t02_classic_deadlock
+    \end{verbatim}
+\end{enumerate}
+
+Os testes são numerados em uma sequência didática para facilitar a compreensão gradual dos problemas de deadlock e suas soluções:
+\begin{itemize}
+    \item Testes 01-02: Ordenação básica de lock e padrão clássico de deadlock
+    \item Testes 03-06: Cenários avançados de deadlock
+    \item Testes 07-09: Técnicas de prevenção de deadlock
+\end{itemize}
+
+Esta suíte abrangente de testes permite avaliar a eficácia do sistema em diferentes cenários e fornece exemplos práticos para demonstrar suas capacidades de detecção.
