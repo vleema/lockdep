@@ -20,6 +20,11 @@ set(COMPILE_OPTIONS
 
 set(LINK_OPTIONS "-fsanitize=address,undefined")
 
+# Add ptrace support
+set(PTRACE_COMPILE_OPTIONS
+    ${COMPILE_OPTIONS}
+    "-DUSE_PTRACE")
+
 # Graph library sources
 file(GLOB GRAPH_SOURCES
     "src/graph/*.c"
@@ -34,6 +39,12 @@ file(GLOB LOCKDEP_SOURCES
 file(GLOB INTERPOSE_SOURCES
     "src/interpose/*.c"
     "src/lockdep/*.c"
+    "src/graph/*.c"
+)
+
+# Ptrace-based sources
+file(GLOB PTRACE_SOURCES
+    "src/ptrace/*.c"
     "src/graph/*.c"
 )
 
@@ -59,3 +70,9 @@ if(TEST_SOURCES)
         target_link_libraries(${test_name} PRIVATE pthread)
     endforeach()
 endif()
+
+# Build ptrace-based detector
+add_executable(ptrace-lockdep ${PTRACE_SOURCES})
+target_compile_options(ptrace-lockdep PRIVATE ${PTRACE_COMPILE_OPTIONS})
+target_link_options(ptrace-lockdep PRIVATE ${LINK_OPTIONS})
+target_link_libraries(ptrace-lockdep PRIVATE pthread)
