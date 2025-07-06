@@ -10,6 +10,7 @@
 #include "syscall_intercept.h"
 #include "pthread_structures.h"
 #include "lock_tracker.h"
+#include "backtrace.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,10 @@ static bool monitor_all_threads = false;
 static bool detect_only = false;
 static int analysis_interval = 1;
 static bool verbose = false;
+static bool analyze_only = false;
+
+// Forward declarations
+static void analyze_existing_deadlocks(pid_t pid);
 
 // Signal handler for graceful termination
 static void signal_handler(int sig) {
@@ -47,6 +52,7 @@ static void print_usage(const char* program_name) {
     printf("  -t, --timeout=SECS    Set monitoring timeout in seconds (default: run until Ctrl+C)\n");
     printf("  -d, --detect-only     Only detect deadlocks, don't modify process behavior\n");
     printf("  -i, --interval=SECS   Analysis interval in seconds (default: 1)\n");
+    printf("  -e, --existing-only   Only analyze existing deadlocks, then exit\n");
 }
 
 // Parse command line arguments
@@ -58,11 +64,12 @@ static bool parse_arguments(int argc, char* argv[]) {
         {"timeout", required_argument, NULL, 't'},
         {"detect-only", no_argument, NULL, 'd'},
         {"interval", required_argument, NULL, 'i'},
+        {"existing-only", no_argument, NULL, 'e'},
         {NULL, 0, NULL, 0}
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "hvat:di:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hvat:di:e", long_options, NULL)) != -1) {
         switch (opt) {
             case 'h':
                 print_usage(argv[0]);
@@ -89,6 +96,9 @@ static bool parse_arguments(int argc, char* argv[]) {
                     fprintf(stderr, "Invalid interval value: %s\n", optarg);
                     return false;
                 }
+                break;
+            case 'e':
+                analyze_only = true;
                 break;
             default:
                 print_usage(argv[0]);
@@ -124,6 +134,9 @@ static bool initialize_subsystems() {
         fprintf(stderr, "Failed to initialize lock tracker\n");
         return false;
     }
+    
+    // Set backtrace options
+    backtrace_set_use_debug_symbols(verbose);
 
     // Initialize syscall interception
     if (!syscall_intercept_init()) {
@@ -249,6 +262,13 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
     
+    // Initialize backtrace subsystem
+    if (!backtrace_init()) {
+        fprintf(stderr, "Failed to initialize backtrace subsystem\n");
+        cleanup_subsystems();
+        return EXIT_FAILURE;
+    }
+    
     // Attach to the target process
     if (!ptrace_attach(target_pid)) {
         fprintf(stderr, "Failed to attach to process %d\n", target_pid);
@@ -268,14 +288,61 @@ int main(int argc, char* argv[]) {
         printf("Attached to %d threads\n", attached);
     }
     
+    // Check for existing deadlocks before starting tracing
+    printf("Analyzing process for existing deadlocks...\n");
+    analyze_existing_deadlocks(target_pid);
+    
+    // If analyze_only is true, we're done after checking for existing deadlocks
+    if (analyze_only) {
+        printf("Existing deadlock analysis completed. Exiting.\n");
+        return EXIT_SUCCESS;
+    }
+    
     // Perform the tracing
     trace_process();
     
     // Clean up
     detach_from_process();
+    backtrace_cleanup();
     cleanup_subsystems();
     
     printf("Monitoring complete\n");
     
     return EXIT_SUCCESS;
+}
+
+/**
+ * Analyze a process for existing deadlocks by capturing backtraces
+ * of all threads and checking for wait patterns.
+ */
+static void analyze_existing_deadlocks(pid_t pid) {
+    const size_t MAX_THREADS = 256;
+    thread_backtrace_t backtraces[MAX_THREADS];
+    size_t thread_count = 0;
+    
+    // Capture backtraces from all threads
+    if (!backtrace_capture_all_threads(pid, backtraces, MAX_THREADS, &thread_count)) {
+        fprintf(stderr, "Failed to capture thread backtraces\n");
+        return;
+    }
+    
+    printf("Captured backtraces from %zu threads\n", thread_count);
+    
+    // Check for deadlocks in the backtraces
+    if (backtrace_detect_deadlocks(backtraces, thread_count)) {
+        printf("DEADLOCK DETECTED: Process appears to be in a deadlock state!\n");
+        
+        // Print detailed information about the deadlock
+        printf("\n=== Deadlock Information ===\n");
+        for (size_t i = 0; i < thread_count; i++) {
+            void* mutex_addr = NULL;
+            if (backtrace_is_waiting_for_mutex(&backtraces[i], &mutex_addr)) {
+                printf("Thread %d is waiting for a mutex\n", backtraces[i].thread_id);
+                backtrace_print(&backtraces[i]);
+                printf("\n");
+            }
+        }
+    } else {
+        printf("No existing deadlocks detected\n");
+    }
 }
