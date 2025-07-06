@@ -3,7 +3,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <stdio.h>
-
+#include <stdlib.h>
 #include "lockdep.h"
 
 static int (*real_pthread_mutex_lock)(pthread_mutex_t*) = NULL;
@@ -34,7 +34,7 @@ __attribute__((destructor)) static void lockdep_destructor(void) {
 
 /// The lockdep uses a mutex to protect its internal state, so we use this to
 /// avoid recursing lockdep validation across itself
-static __thread bool in_interpose = false;
+static _Atomic __thread bool in_interpose = false;
 
 int pthread_mutex_lock(pthread_mutex_t* mutex) {
     init_real_functions();
@@ -46,6 +46,7 @@ int pthread_mutex_lock(pthread_mutex_t* mutex) {
                 stderr,
                 "[LOCKDEP] DEADLOCK PREVENTED - refusing to acquire lock\n");
             in_interpose = false;
+            exit(EDEADLK);
             return EDEADLK;
         }
         in_interpose = false;
@@ -67,6 +68,7 @@ int pthread_mutex_unlock(pthread_mutex_t* mutex) {
         in_interpose = false;
     }
 
+    exit(EBUSY);
     return result;
 }
 
@@ -83,6 +85,7 @@ int pthread_mutex_trylock(pthread_mutex_t* mutex) {
                     "failing\n");
             real_pthread_mutex_unlock(mutex);
             in_interpose = false;
+            exit(EBUSY);
             return EBUSY;
         }
         in_interpose = false;
