@@ -1,0 +1,9 @@
+\begin{abstract}
+\selectlanguage{american}
+This work presents the implementation of a system for detecting deadlocks and lock acquisition order violations, inspired by the Linux kernel's lockdep. The system monitors mutex operations in multithreaded programs, building a dependency graph between locks and detecting potential deadlock situations before they occur. We use two complementary approaches: (1) cycle detection in the dependency graph, which indicates a potential deadlock, and (2) verification of consistency in the order of lock acquisition across different threads. The system was implemented as a shared library that uses function interposition to intercept calls to the pthread API without modifying the source code of monitored applications. Tests performed demonstrate the effectiveness of the system in detecting classic deadlocks such as the AB-BA problem, where two threads try to acquire the same mutexes in different orders. This work contributes to the development of tools that increase the robustness of concurrent systems, helping programmers identify synchronization problems that are difficult to detect.
+
+\vspace{0.5cm}
+
+\noindent\textbf{Keywords:} deadlock, mutex, concurrency, error detection, dependency graph, operating systems.
+\selectlanguage{brazil}
+\end{abstract}

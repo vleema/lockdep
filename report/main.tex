@@ -88,14 +88,175 @@
 % Introduction
 \chapter{Introdução}\label{chap:intro}
 
+Este relatório apresenta o desenvolvimento de um sistema para detecção de deadlocks e violação da ordem de aquisição de travas em programas multithreaded. O sistema implementado, inspirado no lockdep do kernel Linux, monitora a aquisição de mutexes e verifica potenciais situações de deadlock antes que elas ocorram.
+
+\section{Contextualização}
+
+Em programação concorrente, o uso de mutexes (mutual exclusion) é essencial para garantir que apenas uma thread tenha acesso a recursos compartilhados por vez. No entanto, quando múltiplas threads tentam adquirir múltiplos mutexes em ordens diferentes, podem ocorrer deadlocks - uma situação onde duas ou mais threads ficam permanentemente bloqueadas, cada uma esperando por um recurso que outra possui.
+
+Um exemplo clássico de deadlock ocorre quando:
+\begin{itemize}
+    \item Thread A adquire mutex1 e tenta adquirir mutex2
+    \item Thread B adquire mutex2 e tenta adquirir mutex1
+\end{itemize}
+
+Este padrão, conhecido como AB-BA, cria uma dependência circular entre as threads, resultando em um deadlock. Em sistemas reais, estes deadlocks podem ser difíceis de reproduzir e diagnosticar devido à sua natureza dependente de timing.
+
+\section{Objetivo}
+
+O objetivo deste projeto é desenvolver um mecanismo de detecção de deadlocks que:
+
+\begin{enumerate}
+    \item Monitore a aquisição e liberação de mutexes
+    \item Construa um grafo de dependência entre travas
+    \item Detecte potenciais deadlocks verificando ciclos no grafo de dependência
+    \item Alerte sobre violações na ordem de aquisição de travas
+\end{enumerate}
+
+\section{Abordagem}
+
+Nossa implementação adota duas abordagens complementares:
+
+\begin{enumerate}
+    \item \textbf{Detecção de ciclos em grafo de dependências}: Construímos um grafo direcionado onde os nós são mutexes e as arestas representam a ordem de aquisição. Um ciclo neste grafo indica uma potencial situação de deadlock.
+
+    \item \textbf{Verificação de ordem de aquisição}: Para cada thread, mantemos um histórico das ordens em que os mutexes foram adquiridos. Violações dessa ordem em aquisições futuras são sinalizadas como potenciais deadlocks.
+\end{enumerate}
+
+Para interceptar chamadas de mutex sem modificar o código fonte das aplicações, utilizamos a técnica de interposição de funções via LD\_PRELOAD, substituindo as chamadas padrão do pthread por nossas implementações instrumentadas.
+
+% Implementation details
+\chapter{Implementação}\label{chap:impl}
+
+\section{Arquitetura do Sistema}
+
+O sistema de detecção de deadlocks é composto por três componentes principais:
+
+\begin{enumerate}
+    \item \textbf{Núcleo de Detecção (lockdep\_core)}: Responsável pela lógica de detecção de deadlocks, mantendo o grafo de dependências e realizando a verificação de ciclos.
+
+    \item \textbf{Interposição de Funções (pthread\_interpose)}: Intercepta chamadas às funções de mutex da biblioteca pthread e as redireciona para o núcleo de detecção.
+
+    \item \textbf{Interface de API (lockdep.h)}: Define as estruturas de dados e a interface pública do sistema.
+\end{enumerate}
+
+\section{Estruturas de Dados}
+
+Para representar o grafo de dependências e rastrear o estado das threads, utilizamos as seguintes estruturas:
+
+\begin{itemize}
+    \item \textbf{lock\_node\_t}: Representa um mutex no grafo de dependências.
+    \item \textbf{dependency\_edge\_t}: Representa uma aresta direcionada no grafo (ordem de aquisição).
+    \item \textbf{held\_lock\_t}: Mantém uma pilha dos mutexes atualmente possuídos por uma thread.
+    \item \textbf{thread\_context\_t}: Armazena o contexto de uma thread, incluindo seus mutexes atualmente adquiridos.
+\end{itemize}
+
+\section{Algoritmos}
+
+\subsection{Detecção de Ciclos}
+
+Para detectar ciclos no grafo de dependências, implementamos um algoritmo de busca em profundidade (DFS):
+
+\begin{enumerate}
+    \item Para cada nó no grafo, iniciamos uma busca em profundidade.
+    \item Durante a busca, marcamos os nós visitados para evitar processamento repetido.
+    \item Se durante a busca encontramos um caminho que nos leva de volta ao nó inicial, temos um ciclo.
+    \item A presença de um ciclo indica uma potencial situação de deadlock.
+\end{enumerate}
+
+\subsection{Verificação de Ordem de Aquisição}
+
+Para cada thread, mantemos um histórico da ordem de aquisição de mutexes:
+
+\begin{enumerate}
+    \item Quando uma thread adquire um novo mutex, verificamos se este cria uma nova dependência de ordem.
+    \item Se a nova dependência contradiz uma dependência existente, sinalizamos uma violação de ordem.
+    \item Verificamos se a nova dependência cria um ciclo no grafo global de dependências.
+\end{enumerate}
+
+\section{Integração com Aplicações}
+
+O sistema é projetado para ser transparente para as aplicações, não requerendo modificações no código fonte:
+
+\begin{enumerate}
+    \item Compilamos o sistema como uma biblioteca compartilhada (libpthread\_interpose.so).
+    \item Utilizamos a variável de ambiente LD\_PRELOAD para carregar nossa biblioteca antes da biblioteca pthread padrão.
+    \item As aplicações chamam as funções de mutex normalmente, mas nossas versões são executadas primeiro.
+\end{enumerate}
+
+\chapter{Resultados}\label{chap:results}
+
+\section{Testes Realizados}
+
+Para validar o sistema, desenvolvemos dois casos de teste principais:
+
+\begin{enumerate}
+    \item \textbf{simple\_test.c}: Demonstra a criação de dependências em uma única thread, adquirindo mutexes em uma ordem específica.
+    \item \textbf{deadlock\_test.c}: Simula um cenário clássico de deadlock AB-BA, onde duas threads adquirem mutexes em ordens opostas.
+\end{enumerate}
+
+\section{Análise dos Resultados}
+
+\subsection{Detecção de Violação de Ordem}
+
+No teste de deadlock, o sistema detectou corretamente a violação de ordem quando:
+
+\begin{enumerate}
+    \item Thread 1 estabeleceu a ordem mutex1 → mutex2
+    \item Thread 2 tentou estabelecer a ordem mutex2 → mutex1
+\end{enumerate}
+
+O sistema emitiu um alerta indicando que esta violação de ordem poderia levar a um deadlock.
+
+\subsection{Detecção de Ciclo}
+
+Após a violação de ordem, o sistema realizou a verificação de ciclo no grafo de dependências e detectou corretamente o ciclo formado pelas dependências:
+
+\begin{enumerate}
+    \item mutex1 → mutex2 (estabelecido pela Thread 1)
+    \item mutex2 → mutex1 (tentado pela Thread 2)
+\end{enumerate}
+
+Este ciclo foi corretamente identificado como uma situação potencial de deadlock.
+
+\section{Limitações}
+
+O sistema atual possui algumas limitações:
+
+\begin{enumerate}
+    \item Não detecta deadlocks envolvendo outros tipos de primitivas de sincronização (semáforos, variáveis de condição).
+    \item A sobrecarga de monitoramento pode ser significativa em aplicações com uso intensivo de mutexes.
+    \item A interposição via LD\_PRELOAD não funciona com aplicações estaticamente vinculadas.
+\end{enumerate}
+
 % References
 \chapter{Referências}\label{chap:refs}
+
+\begin{thebibliography}{9}
+\bibitem{lockdep}
+  Rusty Russell,
+  \emph{Lockdep: How to read its reports},
+  Linux Kernel Documentation.
+
+\bibitem{pthread}
+  IEEE Computer Society,
+  \emph{POSIX Thread Libraries},
+  IEEE Std 1003.1-2017.
+
+\bibitem{corbet}
+  Jonathan Corbet,
+  \emph{The kernel lock validator},
+  LWN.net, 2006.
+
+\bibitem{deadlock}
+  Coffman, E.G., Elphick, M.J., Shoshani, A.,
+  \emph{System Deadlocks},
+  ACM Computing Surveys, 1971.
+\end{thebibliography}
 % \include{x_referencias/x01_referencias}
 
-% Appendices if needed
+% Appendices
 \appendix
-% Uncomment and add appendix includes as needed
-% \chapter{Apêndice A}\label{chap:appendixA}
-% \include{j_apendices/j01_appendix}
+\include{j_apendices/j01_appendix}
 
 \end{document}

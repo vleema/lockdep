@@ -1,0 +1,593 @@
+\chapter{Código Fonte}\label{chap:appendixA}
+
+\section{Arquivo lockdep.h}
+
+Este arquivo define as estruturas de dados e a API pública do sistema de detecção de deadlocks.
+
+\begin{lstlisting}[language=C, caption={lockdep.h - API de detecção de deadlocks}]
+// ARCHITECTURE OVERVIEW:
+//
+// 1. LOCK GRAPH: All locks should be tracked as nodes in a directed graph where
+//    edges represent ordering dependencies (A → B means A acquired before B).
+//
+// 2. THREAD TRACKING: Each thread should maintain a stack of currently held
+//    locks to detect nested locking patterns and build dependencies.
+//
+// 3. DEADLOCK DETECTION: The system checks for cycles in the lock graph
+//    to detect potential deadlocks. If a cycle is found, the system should
+//    identify the lock and prevent the acquisition that would lead to a
+//    deadlock.
+
+#ifndef LOCKDEP_H
+#define LOCKDEP_H
+
+#include <pthread.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+typedef struct lock_node lock_node_t;
+typedef struct dependency_edge dependency_edge_t;
+typedef struct thread_context thread_context_t;
+
+// Representa todos os locks conhecidos pelo sistema lockdep como um nó de lista encadeada.
+// Cada nó identifica unicamente um lock (ex: por seu endereço) e permite
+// percorrer todos os locks registrados.
+typedef struct lock_node {
+    // Identifica unicamente o lock (ex: endereço do mutex)
+    void* lock_addr;
+    // Para percorrer a lista
+    struct lock_node* next;
+} lock_node_t;
+
+// Representa uma aresta direcionada de dependência no grafo de locks.
+// Cada aresta codifica a ordenação "lock A adquirido antes do lock B" e
+// forma uma lista encadeada para algoritmos de detecção de ciclos.
+typedef struct dependency_edge {
+    // Nó de lock de origem (lock "de")
+    lock_node_t* from;
+    // Nó de lock de destino (lock "para")
+    lock_node_t* to;
+    // Lista encadeada de todas as arestas de dependência
+    struct dependency_edge* next;
+} dependency_edge_t;
+
+// Nó de pilha representando um lock atualmente mantido por uma thread.
+// Permite rastrear aquisições de locks aninhados por thread.
+typedef struct held_lock {
+    // O lock que está sendo mantido
+    lock_node_t* lock;
+    // Próximo lock na pilha (lock mais recente no topo)
+    struct held_lock* next;
+} held_lock_t;
+
+// Contexto por thread para rastrear locks mantidos por cada thread.
+// Mantém uma pilha de locks mantidos, a profundidade atual da pilha e vincula
+// todos os contextos de thread para percorrer.
+typedef struct thread_context {
+    pthread_t thread_id;
+    // Pilha de locks atualmente mantidos por esta thread
+    held_lock_t* held_locks;
+    // O tamanho da pilha de locks mantidos
+    int lock_depth;
+    // Vincula todos os contextos de thread para fácil percurso
+    struct thread_context* next;
+} thread_context_t;
+
+void lockdep_init(void);
+void lockdep_cleanup(void);
+
+// Registra a aquisição de um lock pela thread atual. `lock_addr` é o
+// endereço do lock sendo adquirido. Retorna true se a aquisição é permitida,
+// false se causaria um deadlock.
+bool lockdep_acquire_lock(void* lock_addr);
+
+// Registra a liberação de um lock pela thread atual. `lock_addr` é o
+// lock sendo liberado.
+void lockdep_release_lock(void* lock_addr);
+
+// Verifica o grafo de locks por ciclos (deadlocks potenciais).
+// Retorna true se um deadlock é detectado, false caso contrário.
+bool lockdep_check_deadlock(void);
+
+// Mostra todas as relações A → B no grafo de locks.
+void lockdep_print_dependencies(void);
+
+// Para desabilitar o lockdep sem recompilação.
+extern bool lockdep_enabled;
+
+#endif  // LOCKDEP_H!
+\end{lstlisting}
+
+\section{Arquivo lockdep\_core.c}
+
+Este arquivo implementa a lógica principal de detecção de deadlocks, incluindo o rastreamento de dependências de locks e a verificação de ciclos no grafo.
+
+\begin{lstlisting}[language=C, caption={lockdep\_core.c - Implementação do sistema de detecção de deadlocks}]
+#include <execinfo.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "lockdep.h"
+
+bool lockdep_enabled = true;
+
+// Estado global do grafo de locks
+static lock_node_t* lock_graph = NULL;
+static dependency_edge_t* dependencies = NULL;
+static thread_context_t* thread_contexts = NULL;
+
+// Mutex para proteger o estado interno do grafo de locks
+static pthread_mutex_t lockdep_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Declarações avançadas para funções internas
+static thread_context_t* get_thread_context(void);
+static lock_node_t* find_or_create_lock_node(void* lock_addr);
+static bool check_cycle_from(lock_node_t* start, lock_node_t* target, bool* visited);
+static bool add_dependency(lock_node_t* from, lock_node_t* to);
+static void print_backtrace(void);
+
+void lockdep_init(void) {
+    const char* env = getenv("LOCKDEP_DISABLE");
+    if (env && strcmp(env, "1") == 0) {
+        lockdep_enabled = false;
+        return;
+    }
+
+    fprintf(stderr, "[LOCKDEP] Lockdep initialized\n");
+}
+
+void lockdep_cleanup(void) {
+    pthread_mutex_lock(&lockdep_mutex);
+
+    // Libera os nós de lock
+    lock_node_t* node = lock_graph;
+    while (node) {
+        lock_node_t* next = node->next;
+        free(node);
+        node = next;
+    }
+
+    // Libera as dependências
+    dependency_edge_t* edge = dependencies;
+    while (edge) {
+        dependency_edge_t* next = edge->next;
+        free(edge);
+        edge = next;
+    }
+
+    // Libera os contextos de thread e seus locks mantidos
+    thread_context_t* ctx = thread_contexts;
+    while (ctx) {
+        thread_context_t* next_ctx = ctx->next;
+
+        // Libera a pilha de locks mantidos
+        held_lock_t* held = ctx->held_locks;
+        while (held) {
+            held_lock_t* next_held = held->next;
+            free(held);
+            held = next_held;
+        }
+
+        free(ctx);
+        ctx = next_ctx;
+    }
+
+    lock_graph = NULL;
+    dependencies = NULL;
+    thread_contexts = NULL;
+
+    pthread_mutex_unlock(&lockdep_mutex);
+}
+
+bool lockdep_acquire_lock(void* lock_addr) {
+    if (!lockdep_enabled) {
+        return true;
+    }
+
+    pthread_mutex_lock(&lockdep_mutex);
+
+    printf("[LOCKDEP] Thread %lu acquiring lock at %p\n",
+           (unsigned long)pthread_self(), lock_addr);
+
+    // Obtém ou cria o nó de lock para este endereço de lock
+    lock_node_t* lock_node = find_or_create_lock_node(lock_addr);
+
+    // Obtém o contexto da thread
+    thread_context_t* thread_ctx = get_thread_context();
+
+    // Verifica se já temos locks mantidos e precisamos adicionar dependências
+    if (thread_ctx->held_locks != NULL) {
+        // O lock adquirido mais recentemente deve ter uma dependência neste novo lock
+        lock_node_t* prev_lock = thread_ctx->held_locks->lock;
+
+        // Adiciona dependência: prev_lock -> lock_node
+        if (!add_dependency(prev_lock, lock_node)) {
+            // A dependência criaria um ciclo - deadlock potencial!
+            fprintf(stderr, "[LOCKDEP] AVISO: Violação de ordem de lock detectada!\n");
+            fprintf(stderr, "[LOCKDEP] Thread %lu tentando adquirir %p enquanto mantém %p\n",
+                    (unsigned long)pthread_self(), lock_addr, prev_lock->lock_addr);
+            fprintf(stderr, "[LOCKDEP] Isso viola a ordem de lock observada anteriormente e pode levar a deadlocks.\n");
+            print_backtrace();
+
+            // Verifica se temos um ciclo real no grafo de dependência
+            bool result = lockdep_check_deadlock();
+            if (result) {
+                fprintf(stderr, "[LOCKDEP] POTENCIAL DE DEADLOCK: Dependência circular de lock detectada!\n");
+                pthread_mutex_unlock(&lockdep_mutex);
+                return false;
+            } else {
+                fprintf(stderr, "[LOCKDEP] Apenas aviso: Sem dependência circular ainda, mas ordem de lock inconsistente\n");
+            }
+        }
+    }
+
+    // Empurra este lock para a pilha de locks mantidos pela thread
+    held_lock_t* new_held = malloc(sizeof(held_lock_t));
+    if (!new_held) {
+        perror("[LOCKDEP] Falha ao alocar memória para lock mantido");
+        pthread_mutex_unlock(&lockdep_mutex);
+        return true; // Continua sem rastreamento em caso de falha na alocação
+    }
+
+    new_held->lock = lock_node;
+    new_held->next = thread_ctx->held_locks;
+    thread_ctx->held_locks = new_held;
+    thread_ctx->lock_depth++;
+
+    pthread_mutex_unlock(&lockdep_mutex);
+    return true;
+}
+
+void lockdep_release_lock(void* lock_addr) {
+    if (!lockdep_enabled) {
+        return;
+    }
+
+    pthread_mutex_lock(&lockdep_mutex);
+
+    printf("[LOCKDEP] Thread %lu releasing lock at %p\n",
+           (unsigned long)pthread_self(), lock_addr);
+
+    // Obtém o contexto da thread
+    thread_context_t* thread_ctx = get_thread_context();
+
+    // Encontra e remove o lock da pilha de locks mantidos pela thread
+    held_lock_t** curr = &thread_ctx->held_locks;
+    while (*curr) {
+        if ((*curr)->lock->lock_addr == lock_addr) {
+            held_lock_t* to_free = *curr;
+            *curr = (*curr)->next;
+            free(to_free);
+            thread_ctx->lock_depth--;
+            break;
+        }
+        curr = &(*curr)->next;
+    }
+
+    pthread_mutex_unlock(&lockdep_mutex);
+}
+
+bool lockdep_check_deadlock(void) {
+    if (!lockdep_enabled) {
+        return false;
+    }
+
+    pthread_mutex_lock(&lockdep_mutex);
+
+    bool deadlock_detected = false;
+
+    // Aloca array de visitados para cada nó de lock
+    int node_count = 0;
+    lock_node_t* node;
+    for (node = lock_graph; node != NULL; node = node->next) {
+        node_count++;
+    }
+
+    // Para cada lock, verifica se há um caminho de volta para si mesmo
+    for (node = lock_graph; node != NULL; node = node->next) {
+        bool* visited = calloc(node_count, sizeof(bool));
+        if (!visited) {
+            perror("[LOCKDEP] Falha ao alocar memória para detecção de deadlock");
+            continue;
+        }
+
+        if (check_cycle_from(node, node, visited)) {
+            fprintf(stderr, "[LOCKDEP] Potencial de deadlock: Encontrado ciclo começando no lock %p\n",
+                    node->lock_addr);
+            deadlock_detected = true;
+            free(visited);
+            break;
+        }
+
+        free(visited);
+    }
+
+    pthread_mutex_unlock(&lockdep_mutex);
+    return deadlock_detected;
+}
+
+void lockdep_print_dependencies(void) {
+    if (!lockdep_enabled) {
+        return;
+    }
+
+    pthread_mutex_lock(&lockdep_mutex);
+
+    printf("\n[LOCKDEP] === Grafo de Dependência de Locks ===\n");
+
+    // Imprime todas as arestas no grafo de dependência
+    dependency_edge_t* edge = dependencies;
+    while (edge) {
+        printf("[LOCKDEP] %p -> %p\n", edge->from->lock_addr, edge->to->lock_addr);
+        edge = edge->next;
+    }
+
+    // Imprime todos os contextos de thread e seus locks mantidos
+    printf("\n[LOCKDEP] === Estados de Lock das Threads ===\n");
+    thread_context_t* ctx = thread_contexts;
+    while (ctx) {
+        printf("[LOCKDEP] Thread %lu mantém %d locks: ",
+               (unsigned long)ctx->thread_id, ctx->lock_depth);
+
+        held_lock_t* held = ctx->held_locks;
+        while (held) {
+            printf("%p ", held->lock->lock_addr);
+            held = held->next;
+        }
+        printf("\n");
+
+        ctx = ctx->next;
+    }
+
+    printf("[LOCKDEP] ===========================\n\n");
+
+    pthread_mutex_unlock(&lockdep_mutex);
+}
+
+// Função auxiliar para obter o contexto de thread para a thread atual
+static thread_context_t* get_thread_context(void) {
+    pthread_t self = pthread_self();
+
+    // Verifica se já temos um contexto para esta thread
+    thread_context_t* ctx = thread_contexts;
+    while (ctx) {
+        if (pthread_equal(ctx->thread_id, self)) {
+            return ctx;
+        }
+        ctx = ctx->next;
+    }
+
+    // Cria um novo contexto de thread se não for encontrado
+    ctx = malloc(sizeof(thread_context_t));
+    if (!ctx) {
+        perror("[LOCKDEP] Falha ao alocar memória para contexto de thread");
+        return NULL;
+    }
+
+    ctx->thread_id = self;
+    ctx->held_locks = NULL;
+    ctx->lock_depth = 0;
+    ctx->next = thread_contexts;
+    thread_contexts = ctx;
+
+    return ctx;
+}
+
+// Função auxiliar para encontrar ou criar um nó de lock
+static lock_node_t* find_or_create_lock_node(void* lock_addr) {
+    // Verifica se o lock já existe
+    lock_node_t* node = lock_graph;
+    while (node) {
+        if (node->lock_addr == lock_addr) {
+            return node;
+        }
+        node = node->next;
+    }
+
+    // Cria um novo nó de lock
+    node = malloc(sizeof(lock_node_t));
+    if (!node) {
+        perror("[LOCKDEP] Falha ao alocar memória para nó de lock");
+        return NULL;
+    }
+
+    node->lock_addr = lock_addr;
+    node->next = lock_graph;
+    lock_graph = node;
+
+    return node;
+}
+
+// Função auxiliar para verificar ciclos no grafo de dependência usando DFS
+static bool check_cycle_from(lock_node_t* current, lock_node_t* target, bool* visited) {
+    // Encontra o índice do nó atual
+    int current_idx = 0;
+    lock_node_t* node = lock_graph;
+    while (node != current) {
+        current_idx++;
+        node = node->next;
+    }
+
+    // Se já visitamos este nó nesta travessia DFS, pulamos
+    if (visited[current_idx]) {
+        return false;
+    }
+
+    // Marca o nó atual como visitado
+    visited[current_idx] = true;
+
+    // Verifica todas as arestas de saída do nó atual
+    dependency_edge_t* edge = dependencies;
+    while (edge) {
+        if (edge->from == current) {
+            // Se encontramos nosso alvo, temos um ciclo
+            if (edge->to == target) {
+                return true;
+            }
+
+            // Continua DFS a partir do nó de destino
+            if (check_cycle_from(edge->to, target, visited)) {
+                return true;
+            }
+        }
+        edge = edge->next;
+    }
+
+    return false;
+}
+
+// Função auxiliar para adicionar uma dependência entre locks
+static bool add_dependency(lock_node_t* from, lock_node_t* to) {
+    // Primeiro verifica se esta dependência já existe
+    dependency_edge_t* edge = dependencies;
+    while (edge) {
+        if (edge->from == from && edge->to == to) {
+            return true; // Dependência já existe
+        }
+        edge = edge->next;
+    }
+
+    // Adiciona a nova dependência
+    edge = malloc(sizeof(dependency_edge_t));
+    if (!edge) {
+        perror("[LOCKDEP] Falha ao alocar memória para aresta de dependência");
+        return true; // Continua sem adicionar em caso de falha na alocação
+    }
+
+    edge->from = from;
+    edge->to = to;
+    edge->next = dependencies;
+    dependencies = edge;
+
+    // Verifica se esta nova dependência cria um ciclo
+    bool* visited = calloc(1000, sizeof(bool)); // Assumindo máximo de 1000 locks por simplicidade
+    if (!visited) {
+        perror("[LOCKDEP] Falha ao alocar memória para detecção de ciclo");
+        return true; // Continua sem verificar em caso de falha na alocação
+    }
+
+    // Verifica se há um caminho de 'to' de volta para 'from', o que criaria um ciclo
+    bool has_cycle = check_cycle_from(to, from, visited);
+
+    free(visited);
+    return !has_cycle; // Retorna falso se o ciclo existir
+}
+
+// Função auxiliar para imprimir um backtrace quando violações de ordem de lock são detectadas
+static void print_backtrace(void) {
+    void* callstack[128];
+    int frames = backtrace(callstack, 128);
+    char** symbols = backtrace_symbols(callstack, frames);
+
+    fprintf(stderr, "[LOCKDEP] Backtrace de violação de ordem de lock:\n");
+    for (int i = 0; i < frames; i++) {
+        fprintf(stderr, "  %s\n", symbols[i]);
+    }
+
+    free(symbols);
+}
+\end{lstlisting}
+
+\section{Arquivo pthread\_interpose.c}
+
+Este arquivo implementa a camada de interposição que intercepta as chamadas de mutex do pthread.
+
+\begin{lstlisting}[language=C, caption={pthread\_interpose.c - Interposição de funções pthread}]
+#include <dlfcn.h>
+#include <errno.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdio.h>
+
+#include "lockdep.h"
+
+static int (*real_pthread_mutex_lock)(pthread_mutex_t*) = NULL;
+static int (*real_pthread_mutex_unlock)(pthread_mutex_t*) = NULL;
+static int (*real_pthread_mutex_trylock)(pthread_mutex_t*) = NULL;
+
+/// Esta função interpõe as funções reais do mutex pthread para adicionar validação lockdep
+static void init_real_functions(void) {
+    if (!real_pthread_mutex_lock) {
+        real_pthread_mutex_lock = dlsym(RTLD_NEXT, "pthread_mutex_lock");
+    }
+    if (!real_pthread_mutex_unlock) {
+        real_pthread_mutex_unlock = dlsym(RTLD_NEXT, "pthread_mutex_unlock");
+    }
+    if (!real_pthread_mutex_trylock) {
+        real_pthread_mutex_trylock = dlsym(RTLD_NEXT, "pthread_mutex_trylock");
+    }
+}
+
+__attribute__((constructor)) static void lockdep_constructor(void) {
+    lockdep_init();
+    init_real_functions();
+}
+
+__attribute__((destructor)) static void lockdep_destructor(void) {
+    lockdep_cleanup();
+}
+
+/// O lockdep usa um mutex para proteger seu estado interno, então usamos isto para
+/// evitar recursão na validação do lockdep através dele mesmo
+static __thread bool in_interpose = false;
+
+int pthread_mutex_lock(pthread_mutex_t* mutex) {
+    init_real_functions();
+
+    if (lockdep_enabled && !in_interpose) {
+        in_interpose = true;
+        if (!lockdep_acquire_lock(mutex)) {
+            fprintf(
+                stderr,
+                "[LOCKDEP] DEADLOCK PREVENIDO - recusando adquirir lock\n");
+            in_interpose = false;
+            return EDEADLK;
+        }
+        in_interpose = false;
+    }
+
+    int result = real_pthread_mutex_lock(mutex);
+
+    return result;
+}
+
+int pthread_mutex_unlock(pthread_mutex_t* mutex) {
+    init_real_functions();
+
+    int result = real_pthread_mutex_unlock(mutex);
+
+    if (lockdep_enabled && !in_interpose) {
+        in_interpose = true;
+        lockdep_release_lock(mutex);
+        in_interpose = false;
+    }
+
+    return result;
+}
+
+int pthread_mutex_trylock(pthread_mutex_t* mutex) {
+    init_real_functions();
+
+    int result = real_pthread_mutex_trylock(mutex);
+
+    if (result == 0 && lockdep_enabled && !in_interpose) {
+        in_interpose = true;
+        if (!lockdep_acquire_lock(mutex)) {
+            fprintf(stderr,
+                    "[LOCKDEP] DEADLOCK DETECTADO em trylock - desbloqueando e "
+                    "falhando\n");
+            real_pthread_mutex_unlock(mutex);
+            in_interpose = false;
+            return EBUSY;
+        }
+        in_interpose = false;
+    }
+
+    return result;
+}
+\end{lstlisting}
