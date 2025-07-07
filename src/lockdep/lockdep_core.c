@@ -96,21 +96,16 @@ bool lockdep_acquire_lock(void* lock_addr) {
         if (graph_would_create_cycle(dependency_graph, prev_lock_node, lock_node)) {
             // Dependency would create a cycle - potential deadlock!
             void* prev_lock_addr = graph_node_get_id(prev_lock_node);
-            fprintf(stderr, "[LOCKDEP] WARNING: Lock order violation detected!\n");
+            fprintf(stderr, "[LOCKDEP] DEADLOCK PREVENTED: Lock order violation detected!\n");
             fprintf(stderr, "[LOCKDEP] Thread %lu attempting to acquire %p while holding %p\n",
                     (unsigned long)pthread_self(), lock_addr, prev_lock_addr);
-            fprintf(stderr, "[LOCKDEP] This violates previously observed lock ordering and may lead to deadlocks.\n");
+            fprintf(stderr, "[LOCKDEP] This violates previously observed lock ordering and WILL lead to deadlocks.\n");
             print_backtrace();
             
-            // Check if we have an actual cycle in the dependency graph
-            bool result = lockdep_check_deadlock();
-            if (result) {
-                fprintf(stderr, "[LOCKDEP] DEADLOCK POTENTIAL: Circular lock dependency detected!\n");
-                pthread_mutex_unlock(&lockdep_mutex);
-                return false;
-            } else {
-                fprintf(stderr, "[LOCKDEP] Warning only: No circular dependency yet, but lock order inconsistent\n");
-            }
+            // Always prevent lock order violations - don't wait for actual cycles
+            fprintf(stderr, "[LOCKDEP] PREVENTING LOCK ACQUISITION to avoid deadlock!\n");
+            pthread_mutex_unlock(&lockdep_mutex);
+            return false;
         } else {
             // Add the dependency to the graph
             graph_add_edge(dependency_graph, prev_lock_node, lock_node);
