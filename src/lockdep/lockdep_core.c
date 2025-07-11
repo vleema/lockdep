@@ -1,51 +1,59 @@
 #include <execinfo.h>
+#include <pthread.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "../include/lockdep.h"
 
 bool lockdep_enabled = true;
 
-lock_node_t* list = NULL;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void add_lock(void* lock_addr) {
-    lock_node_t* new = malloc(sizeof *new);
+static lock_node_t* lock_registry = NULL;
 
-    if (!new) {
-        perror("malloc");
-        exit(1);
+void* smalloc(size_t bytes) {
+    void* v = malloc(bytes);
+    if (v == NULL) {
+        fprintf(stderr, "out of memory\n");
+        exit(EXIT_FAILURE);
     }
-
-    new->lock_addr = lock_addr;
-    new->next = NULL;
-
-    if (!list) {
-        list = new;
-        return;
-    } else {
-        lock_node_t* ptr = list;
-        while (ptr->next != NULL) {
-            ptr = ptr->next;
-        }
-        ptr->next = new;
-    }
+    return v;
 }
 
-void remove_lock(void* lock_addr) {
-    if (!list) return;
+static lock_node_t* find_or_create_lock(void* lock_addr) {
+    lock_node_t* ptr = lock_registry;
+
+    while (ptr && ptr->lock_addr != lock_addr) ptr = ptr->next;
+
+    if (ptr) return ptr;
+
+    pthread_mutex_lock(&mutex);
+    lock_node_t* new = smalloc(sizeof *new);
+
+    new->lock_addr = lock_addr;
+    new->next = lock_registry;
+
+    pthread_mutex_unlock(&mutex);
+    return lock_registry = new;
+}
+
+static void remove_lock(void* lock_addr) {
+    if (!lock_registry) return;
 
     lock_node_t* node;
 
-    if (list->lock_addr == lock_addr) {
-        node = list;
-        list = node->next;
+    if (lock_registry->lock_addr == lock_addr) {
+        node = lock_registry;
+        lock_registry = node->next;
         free(node);
         return;
     }
 
-    lock_node_t* ptr = list;
+    lock_node_t* ptr = lock_registry;
     while (ptr->next && ptr->next->lock_addr != lock_addr) {
         ptr = ptr->next;
     }
@@ -74,7 +82,7 @@ void lockdep_cleanup(void) {
 bool lockdep_acquire_lock(void* lock_addr) {
     printf("[LOCKDEP] Acquiring lock at %p\n", lock_addr);
 
-    add_lock(lock_addr);
+    find_or_create_lock(lock_addr);
     // verificar se tem ciclo
     return true;
 }
