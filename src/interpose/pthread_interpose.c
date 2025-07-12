@@ -41,7 +41,6 @@ int pthread_mutex_lock(pthread_mutex_t* mutex)
     if (lockdep_enabled && !in_interpose) {
         in_interpose = true;
         if (!lockdep_acquire_lock(mutex)) {
-            fprintf(stderr, "[LOCKDEP] DEADLOCK DETECTED\n");
             in_interpose = false;
         }
         in_interpose = false;
@@ -74,8 +73,6 @@ int pthread_mutex_trylock(pthread_mutex_t* mutex)
     if (result == 0 && lockdep_enabled && !in_interpose) {
         in_interpose = true;
         if (!lockdep_acquire_lock(mutex)) {
-            fprintf(stderr, "[LOCKDEP] DEADLOCK DETECTED on trylock - unlocking and "
-                            "failing\n");
             real_pthread_mutex_unlock(mutex);
             in_interpose = false;
             return EBUSY;

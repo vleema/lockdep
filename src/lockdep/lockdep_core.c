@@ -11,8 +11,11 @@ static lock_node_t* lock_registry;
 static thread_context_t* thread_registry;
 static pthread_mutex_t lockdep_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static void* smalloc(const size_t bytes)
-{
+static lock_node_t** cycle_path = NULL;
+static size_t cycle_path_size = 0;
+static size_t cycle_path_capacity = 0;
+
+static void* smalloc(const size_t bytes) {
     void* ptr = malloc(bytes);
     if (!ptr) {
         fprintf(stderr, "out of memory, aborting\n");
@@ -21,8 +24,16 @@ static void* smalloc(const size_t bytes)
     return ptr;
 }
 
-static lock_node_t* find_or_create_lock(const void* lock_addr)
-{
+static void* srealloc(void* ptr, const size_t bytes) {
+    void* new_ptr = realloc(ptr, bytes);
+    if (!new_ptr) {
+        fprintf(stderr, "out of memory, aborting\n");
+        exit(1);
+    }
+    return new_ptr;
+}
+
+static lock_node_t* find_or_register_lock(const void* lock_addr) {
     lock_node_t* lock = lock_registry;
 
     while (lock) {
@@ -131,12 +142,60 @@ static bool has_cycle(const lock_node_t* l)
         }
         to_visit = to_visit->next;
     }
-    // Reached the end without finding a cycle.
+}
+
+static void print_cycle(const lock_node_t* lock) {
+    fprintf(stderr, "[LOCKDEP] DEADLOCK DETECTED:\n");
+
+    fprintf(stderr, "[LOCKDEP] Lock dependency cycle:");
+    for (size_t i = 0; i < cycle_path_size; i++) {
+        fprintf(stderr, " %p", cycle_path[i]->lock_addr);
+        if (i < cycle_path_size - 1) {
+            fprintf(stderr, " →");
+        }
+    }
+    fprintf(stderr, " → %p\n", lock->lock_addr);
+}
+
+static bool has_deadlock_with_path(lock_node_t* lock) {
+    if (lock->color == GRAY) {
+        print_cycle(lock);
+        return true;
+    }
+    if (lock->color == BLACK) return false;
+
+    if (cycle_path_size >= cycle_path_capacity) {
+        cycle_path_capacity =
+            cycle_path_capacity == 0 ? 16 : cycle_path_capacity * 2;
+        cycle_path =
+            srealloc(cycle_path, cycle_path_capacity * sizeof(lock_node_t*));
+    }
+
+    cycle_path[cycle_path_size++] = lock;
+    lock->color = GRAY;
+
+    for (adjacency_locks_t* parent = lock->children; parent;
+         parent = parent->next) {
+        if (has_deadlock_with_path(parent->lock)) return true;
+    }
+
+    lock->color = BLACK;
+    cycle_path_size--;
     return false;
 }
 
-void lockdep_init(void)
-{
+static bool has_deadlock(lock_node_t* lock) {
+    cycle_path_size = 0;
+    return has_deadlock_with_path(lock);
+}
+
+static void clear_visited() {
+    for (lock_node_t* lock = lock_registry; lock; lock = lock->next) {
+        lock->color = WHITE;
+    }
+}
+
+void lockdep_init(void) {
     const char* env = getenv("LOCKDEP_DISABLE");
     if (env && strcmp(env, "1") == 0) {
         lockdep_enabled = false;
