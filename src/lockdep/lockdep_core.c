@@ -29,7 +29,6 @@ static lock_node_t* find_or_create_lock(const void* lock_addr)
         if (lock->lock_addr == lock_addr) return lock;
         lock = lock->next;
     }
-
     lock = smalloc(sizeof(lock_node_t));
     lock->children = NULL;
     lock->lock_addr = lock_addr;
@@ -91,6 +90,24 @@ void lockdep_init(void)
 
     fprintf(stderr, "[LOCKDEP] Lockdep initialized\n");
 }
+//This function adds the adjacency between the lock that was just added to the thread context
+//to the one that was added just before that one
+void lockdep_add_adjacencies(lock_node_t* lock, const thread_context_t* ctx){
+    adjacency_locks_t* tmp = lock->children;
+    while(tmp){
+        tmp=tmp->next;
+    }
+    //if thread context has only one mutex lock
+    //there is nothing to add
+    if(!ctx->held_locks->next){
+        return;
+    }
+    tmp = smalloc(sizeof(adjacency_locks_t));
+    tmp->lock = ctx->held_locks->next->lock;
+    tmp->next = lock->children;
+    lock->children = tmp;
+    return;
+}
 
 bool lockdep_acquire_lock(const void* lock_addr)
 {
@@ -100,7 +117,11 @@ bool lockdep_acquire_lock(const void* lock_addr)
 
     lock_node_t* lock = find_or_create_lock(lock_addr);
     const thread_context_t* ctx = add_lock_to_thread_context(find_thread_context(pthread_self()), lock);
+    //here we check if there's a deadlock
 
+    //QUESTION: What happens if the same thread is trying to lock a mutex that it has already locked?
+    lockdep_add_adjacencies(lock, ctx);
+    //TODO: Detect cycles
     // TODO: Remove this print when finishing adding the remaining functionalities
     held_lock_t* held = ctx->held_locks;
     printf("[LOCKDEP] Thread %lu currently holds locks:\n", ctx->thread_id);
@@ -108,7 +129,6 @@ bool lockdep_acquire_lock(const void* lock_addr)
         printf("[LOCKDEP] - %p\n", held->lock->lock_addr);
         held = held->next;
     }
-
     pthread_mutex_unlock(&lockdep_mutex);
 
     return false;
