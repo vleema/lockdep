@@ -168,15 +168,7 @@ void lockdep_release_lock(const void* lock_addr)
 
     pthread_mutex_lock(&lockdep_mutex);
 
-    const thread_context_t* ctx = release_lock_from_thread_context(find_thread_context(pthread_self()), lock_addr);
-
-    // TODO: Remove this print when finishing adding the remaining functionalities
-    held_lock_t* held = ctx->held_locks;
-    printf("[LOCKDEP] Thread %lu currently holds locks:\n", ctx->thread_id);
-    while (held) {
-        printf("[LOCKDEP] - %p\n", held->lock->lock_addr);
-        held = held->next;
-    }
+    release_lock_from_thread_context(find_thread_context(pthread_self()), lock_addr);
 
     pthread_mutex_unlock(&lockdep_mutex);
 }
