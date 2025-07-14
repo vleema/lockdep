@@ -34,6 +34,7 @@ static lock_node_t* find_or_create_lock(const void* lock_addr)
     lock->children = NULL;
     lock->lock_addr = lock_addr;
     lock->next = lock_registry;
+    lock->was_visited = false;
     return lock_registry = lock;
 }
 
@@ -103,6 +104,37 @@ static void add_dependency_to_graph(const thread_context_t* ctx, lock_node_t* lo
     }
 }
 
+static void unvisit_locks()
+{
+    lock_node_t* l = lock_registry;
+    while (l) {
+        l->was_visited = false;
+        l = l->next;
+    }
+}
+
+static bool has_cycle(const lock_node_t* l)
+{
+    adjacency_locks_t* to_visit = l->children;
+    while (to_visit) {
+        // There is a node to visit.
+        if (!to_visit->lock->was_visited) {
+            to_visit->lock->was_visited = true;
+            const bool returnval = has_cycle(to_visit->lock);
+            to_visit->lock->was_visited = false;
+            return returnval;
+        }
+        // Tried to visit a node that had already been visited
+        // cycle detected.
+        else {
+            return true;
+        }
+        to_visit = to_visit->next;
+    }
+    // Reached the end without finding a cycle.
+    return false;
+}
+
 void lockdep_init(void)
 {
     const char* env = getenv("LOCKDEP_DISABLE");
@@ -122,12 +154,12 @@ bool lockdep_acquire_lock(const void* lock_addr)
 
     lock_node_t* lock = find_or_create_lock(lock_addr);
     add_dependency_to_graph(add_lock_to_thread_context(find_thread_context(pthread_self()), lock), lock);
-
-    // TODO: Implement deadlock detection and cycle detection here
+    const bool deadlock = has_cycle(lock);
+    deadlock ? 42 : unvisit_locks();
 
     pthread_mutex_unlock(&lockdep_mutex);
 
-    return false;
+    return !deadlock;
 }
 
 void lockdep_release_lock(const void* lock_addr)

@@ -22,6 +22,7 @@ typedef struct adjacent_locks adjacency_locks_t;
 // Node representing a lock in the lock dependency graph.
 typedef struct lock_node {
     const void* lock_addr;       // Address of the lock.
+    bool was_visited;            // Flag to indicate if the lock was visited during DFS.
     adjacency_locks_t* children; // List of adjacent (child) locks.
     struct lock_node* next;      // Next lock node in the list.
 } lock_node_t;
