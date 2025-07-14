@@ -23,6 +23,7 @@ typedef struct adjacent_locks adjacency_locks_t;
 typedef struct lock_node {
     const void* lock_addr;       // Address of the lock.
     adjacency_locks_t* children; // List of adjacent (child) locks.
+    bool lock_was_visited;       //Boolean used for the cycle detection
     struct lock_node* next;      // Next lock node in the list.
 } lock_node_t;
 
