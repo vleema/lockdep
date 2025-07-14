@@ -15,7 +15,8 @@ static lock_node_t** cycle_path = NULL;
 static size_t cycle_path_size = 0;
 static size_t cycle_path_capacity = 0;
 
-static void* smalloc(const size_t bytes) {
+static void* smalloc(const size_t bytes)
+{
     void* ptr = malloc(bytes);
     if (!ptr) {
         fprintf(stderr, "out of memory, aborting\n");
@@ -24,7 +25,8 @@ static void* smalloc(const size_t bytes) {
     return ptr;
 }
 
-static void* srealloc(void* ptr, const size_t bytes) {
+static void* srealloc(void* ptr, const size_t bytes)
+{
     void* new_ptr = realloc(ptr, bytes);
     if (!new_ptr) {
         fprintf(stderr, "out of memory, aborting\n");
@@ -33,7 +35,8 @@ static void* srealloc(void* ptr, const size_t bytes) {
     return new_ptr;
 }
 
-static lock_node_t* find_or_register_lock(const void* lock_addr) {
+static lock_node_t* find_or_register_lock(const void* lock_addr)
+{
     lock_node_t* lock = lock_registry;
 
     while (lock) {
@@ -124,27 +127,8 @@ static void unvisit_locks()
     }
 }
 
-static bool has_cycle(const lock_node_t* l)
+static void print_cycle(const lock_node_t* lock)
 {
-    adjacency_locks_t* to_visit = l->children;
-    while (to_visit) {
-        // There is a node to visit.
-        if (!to_visit->lock->was_visited) {
-            to_visit->lock->was_visited = true;
-            const bool returnval = has_cycle(to_visit->lock);
-            to_visit->lock->was_visited = false;
-            return returnval;
-        }
-        // Tried to visit a node that had already been visited
-        // cycle detected.
-        else {
-            return true;
-        }
-        to_visit = to_visit->next;
-    }
-}
-
-static void print_cycle(const lock_node_t* lock) {
     fprintf(stderr, "[LOCKDEP] DEADLOCK DETECTED:\n");
 
     fprintf(stderr, "[LOCKDEP] Lock dependency cycle:");
@@ -157,45 +141,42 @@ static void print_cycle(const lock_node_t* lock) {
     fprintf(stderr, " → %p\n", lock->lock_addr);
 }
 
-static bool has_deadlock_with_path(lock_node_t* lock) {
-    if (lock->color == GRAY) {
-        print_cycle(lock);
-        return true;
+static bool has_cycle(const lock_node_t* l)
+{
+    adjacency_locks_t* to_visit = l->children;
+    while (to_visit) {
+        if (!to_visit->lock->was_visited) {
+            to_visit->lock->was_visited = true;
+
+            if (cycle_path_size >= cycle_path_capacity) {
+                cycle_path_capacity = cycle_path_capacity == 0 ? 16 : cycle_path_capacity * 2;
+                cycle_path = srealloc(cycle_path, cycle_path_capacity * sizeof(lock_node_t*));
+            }
+            cycle_path[cycle_path_size++] = to_visit->lock;
+
+            const bool returnval = has_cycle(to_visit->lock);
+
+            cycle_path_size--;
+
+            to_visit->lock->was_visited = false;
+            if (returnval) return true;
+        } else {
+            print_cycle(to_visit->lock);
+            return true;
+        }
+        to_visit = to_visit->next;
     }
-    if (lock->color == BLACK) return false;
-
-    if (cycle_path_size >= cycle_path_capacity) {
-        cycle_path_capacity =
-            cycle_path_capacity == 0 ? 16 : cycle_path_capacity * 2;
-        cycle_path =
-            srealloc(cycle_path, cycle_path_capacity * sizeof(lock_node_t*));
-    }
-
-    cycle_path[cycle_path_size++] = lock;
-    lock->color = GRAY;
-
-    for (adjacency_locks_t* parent = lock->children; parent;
-         parent = parent->next) {
-        if (has_deadlock_with_path(parent->lock)) return true;
-    }
-
-    lock->color = BLACK;
-    cycle_path_size--;
     return false;
 }
 
-static bool has_deadlock(lock_node_t* lock) {
+static bool has_deadlock(lock_node_t* lock)
+{
     cycle_path_size = 0;
-    return has_deadlock_with_path(lock);
+    return has_cycle(lock);
 }
 
-static void clear_visited() {
-    for (lock_node_t* lock = lock_registry; lock; lock = lock->next) {
-        lock->color = WHITE;
-    }
-}
-
-void lockdep_init(void) {
+void lockdep_init(void)
+{
     const char* env = getenv("LOCKDEP_DISABLE");
     if (env && strcmp(env, "1") == 0) {
         lockdep_enabled = false;
@@ -211,9 +192,9 @@ bool lockdep_acquire_lock(const void* lock_addr)
 
     pthread_mutex_lock(&lockdep_mutex);
 
-    lock_node_t* lock = find_or_create_lock(lock_addr);
+    lock_node_t* lock = find_or_register_lock(lock_addr);
     add_dependency_to_graph(add_lock_to_thread_context(find_thread_context(pthread_self()), lock), lock);
-    const bool deadlock = has_cycle(lock);
+    const bool deadlock = has_deadlock(lock);
     deadlock ? 42 : unvisit_locks();
 
     pthread_mutex_unlock(&lockdep_mutex);
