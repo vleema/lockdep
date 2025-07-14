@@ -81,6 +81,28 @@ static thread_context_t* release_lock_from_thread_context(thread_context_t* ctx,
     return ctx;
 }
 
+static void add_dependency_to_graph(const thread_context_t* ctx, lock_node_t* lock)
+{
+    held_lock_t* held = ctx->held_locks->next;
+    if (held) {
+        adjacency_locks_t* adj = held->lock->children;
+        bool already_depends = false;
+        while (adj) {
+            if (adj->lock->lock_addr == lock->lock_addr) {
+                already_depends = true;
+                break;
+            }
+            adj = adj->next;
+        }
+        if (!already_depends) {
+            adjacency_locks_t* new_adj = smalloc(sizeof(adjacency_locks_t));
+            new_adj->lock = lock;
+            new_adj->next = held->lock->children;
+            held->lock->children = new_adj;
+        }
+    }
+}
+
 void lockdep_init(void)
 {
     const char* env = getenv("LOCKDEP_DISABLE");
@@ -99,15 +121,9 @@ bool lockdep_acquire_lock(const void* lock_addr)
     pthread_mutex_lock(&lockdep_mutex);
 
     lock_node_t* lock = find_or_create_lock(lock_addr);
-    const thread_context_t* ctx = add_lock_to_thread_context(find_thread_context(pthread_self()), lock);
+    add_dependency_to_graph(add_lock_to_thread_context(find_thread_context(pthread_self()), lock), lock);
 
-    // TODO: Remove this print when finishing adding the remaining functionalities
-    held_lock_t* held = ctx->held_locks;
-    printf("[LOCKDEP] Thread %lu currently holds locks:\n", ctx->thread_id);
-    while (held) {
-        printf("[LOCKDEP] - %p\n", held->lock->lock_addr);
-        held = held->next;
-    }
+    // TODO: Implement deadlock detection and cycle detection here
 
     pthread_mutex_unlock(&lockdep_mutex);
 
