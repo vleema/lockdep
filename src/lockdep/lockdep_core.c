@@ -142,24 +142,6 @@ void lockdep_init(void)
 
     fprintf(stderr, "[LOCKDEP] Lockdep initialized\n");
 }
-//This function adds the adjacency between the lock that was just added to the thread context
-//to the one that was added just before that one
-void lockdep_add_adjacencies(lock_node_t* lock, const thread_context_t* ctx){
-    adjacency_locks_t* tmp = lock->children;
-    while(tmp){
-        tmp=tmp->next;
-    }
-    //if thread context has only one mutex lock
-    //there is nothing to add
-    if(!ctx->held_locks->next){
-        return;
-    }
-    tmp = smalloc(sizeof(adjacency_locks_t));
-    tmp->lock = ctx->held_locks->next->lock;
-    tmp->next = lock->children;
-    lock->children = tmp;
-    return;
-}
 
 bool lockdep_acquire_lock(const void* lock_addr)
 {
