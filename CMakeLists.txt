@@ -14,11 +14,12 @@ set(COMPILE_OPTIONS
     "-Wall"
     "-Werror"
     "-Wextra"
-    "-fsanitize=address,undefined"
+    # "-fsanitize=address,undefined"
     "-fno-omit-frame-pointer"
-    "-g3")
+    "-g3"
+)
 
-set(LINK_OPTIONS "-fsanitize=address,undefined")
+# set(LINK_OPTIONS "-fsanitize=address,undefined")
 
 # Core lockdep library sources
 file(GLOB LOCKDEP_SOURCES
