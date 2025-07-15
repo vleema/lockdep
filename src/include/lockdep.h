@@ -24,6 +24,7 @@
 
 typedef struct adjacent_locks adjacency_locks_t;
 typedef struct held_lock held_lock_t;
+typedef struct thread_context thread_context_t;
 
 // Node representing a lock in the lock dependency graph.
 typedef struct lock_node {
@@ -47,6 +48,7 @@ typedef struct held_lock {
     struct timespec acquired_at;                      // When this lock was acquired by this thread.
     void* acquisition_stack[LOCKDEP_MAX_STACK_DEPTH]; // Stack trace where acquired.
     int stack_depth;                                  // Number of valid stack frames.
+    thread_context_t* thread_context;                 // Reference to the thread context holding this lock.
     struct held_lock* next;                           // Next held lock in the list.
 } held_lock_t;
 

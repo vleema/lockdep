@@ -157,6 +157,7 @@ static thread_context_t* add_lock_to_thread_context(thread_context_t* ctx, lock_
     if (ctx) {
         held_lock_t* new_held = smalloc(sizeof(held_lock_t));
         new_held->lock = lock;
+        new_held->thread_context = ctx;
         clock_gettime(CLOCK_MONOTONIC, &new_held->acquired_at);
         capture_stack_trace(new_held->acquisition_stack, &new_held->stack_depth, LOCKDEP_MAX_STACK_DEPTH);
         new_held->next = ctx->held_locks;
@@ -174,6 +175,7 @@ static thread_context_t* add_lock_to_thread_context(thread_context_t* ctx, lock_
         snprintf(ctx->thread_name, sizeof(ctx->thread_name), "thread_%d", ctx->thread_id);
 
         ctx->held_locks->lock = lock;
+        ctx->held_locks->thread_context = ctx;
         clock_gettime(CLOCK_MONOTONIC, &ctx->held_locks->acquired_at);
         capture_stack_trace(ctx->held_locks->acquisition_stack, &ctx->held_locks->stack_depth, LOCKDEP_MAX_STACK_DEPTH);
         ctx->held_locks->next = NULL;
@@ -308,6 +310,8 @@ static void print_cycle(const lock_node_t* lock)
             held_lock_t* held = current_lock->current_held_lock;
             fprintf(stderr, "      Acquired: %.5fs ago\n",
                     (double)held->acquired_at.tv_sec + (double)held->acquired_at.tv_nsec / 1e9);
+
+            fprintf(stderr, "      Owner: %s\n", held->lock->current_held_lock->thread_context->thread_name);
 
             if (held->stack_depth > 0) {
                 fprintf(stderr, "      Acquisition stack trace:\n");
