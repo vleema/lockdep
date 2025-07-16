@@ -12,6 +12,7 @@
  * none of them can pick up their right fork, resulting in deadlock.
  */
 
+#define SHALL_LOCK 1
 #define NUM_PHILOSOPHERS 5
 #define THINKING 0
 #define HUNGRY 1
@@ -51,14 +52,20 @@ void* philosopher(void* arg)
     // We want most philosophers to pick up left fork first, but
     // let the last philosopher pick up right fork first to avoid deadlock
     int first_fork, second_fork;
-    if (id == NUM_PHILOSOPHERS - 1) {
-        // Last philosopher picks up right fork first
-        first_fork = right_fork;
-        second_fork = left_fork;
-    } else {
-        // Other philosophers pick up left fork first
+
+    if (SHALL_LOCK){
         first_fork = left_fork;
         second_fork = right_fork;
+    } else {
+        if (id == NUM_PHILOSOPHERS - 1) {
+            // Last philosopher picks up right fork first
+            first_fork = right_fork;
+            second_fork = left_fork;
+        } else {
+            // Other philosophers pick up left fork first
+            first_fork = left_fork;
+            second_fork = right_fork;
+        }
     }
 
     // Philosopher lifecycle
