@@ -60,6 +60,8 @@ void* philosopher(void* arg)
         first_fork = left_fork;
         second_fork = right_fork;
     }
+    // first_fork = left_fork;
+    // second_fork = right_fork;
 
     // Philosopher lifecycle
     for (int cycle = 0; cycle < 3; cycle++) {
