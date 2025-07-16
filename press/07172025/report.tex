@@ -1,0 +1,174 @@
+\documentclass{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{listings} % Para snippets de código
+\lstset{basicstyle=\tiny\ttfamily, breaklines=true} % Config para código
+
+\usetheme{CambridgeUS}
+\setbeamertemplate{navigation symbols}{} % Remove symbols to avoid overflows
+
+\title[Detecção de Deadlocks]{Detecção de Deadlocks e Violação da Ordem de Aquisição de Travas}
+\subtitle{Baseado em DEFINITION.md}
+\institute{Universidade Federal do Rio Grande do Norte}
+\date{16 de julho de 2025}
+
+\newcommand{\cHeader}{../../src/include/lockdep.h}
+\newcommand{\cCore}{../../src/lockdep/lockdep_core.c}
+\newcommand{\cInterpose}{../../src/interpose/pthread_interpose.c}
+
+\newcommand{\cDining}{../../tests/t05_dining_philosophers.c}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Integrantes}
+\begin{table}[ht]
+\centering
+\begin{tabular}{|p{6.5cm}|p{4.5cm}|}
+\hline
+\textbf{Nome} & \textbf{E-mail} \\
+\hline
+
+\textbf{Corpo docente} \\
+
+\hline
+Samuel Xavier de Souza &
+samuel.xavier@ufrn.br \\
+
+\hline
+Wedson Torres de Almeida Filho &
+wedson.almeida@dca.ufrn.br \\
+\hline
+
+\textbf{Corpo discente} \\
+
+\hline
+Vinicius de Lima Duarte Sampaio &
+vinicius.lima.115@ufrn.edu.br \\
+
+\hline
+Emanuel Rawa Gurgel de Araujo Freitas &
+emanuelrawa@gmail.com \\
+
+\hline
+Arthur Jose Arruda Skeete &
+arthurjoskeete@gmail.com \\
+
+\hline
+Yuri Maximiliano Brasileiro Santos &
+yurimax322@gmail.com \\
+
+\hline
+José Henrique Targino Dias Góis &
+ze.gois.00@gmail.com \\
+
+\hline
+\end{tabular}
+\end{table}
+\end{frame}
+
+\begin{frame}{Sumário}
+  \tableofcontents
+\end{frame}
+
+\section{Introdução e Objetivo}
+\begin{frame}{Objetivo Geral}
+  \begin{itemize}
+    \item Estender mutexes didáticos para detectar deadlocks e violações de ordem.
+    \item Inspirado no lockdep do Linux.
+    \item Abordagens: Grafo de espera (reativo) ou verificação de ordem (preventivo).
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Requisitos Principais}
+  \begin{itemize}
+    \item Base em mutex C.
+    \item Estruturas: Dono atual, fila de espera, ordem por thread.
+    \item Implementar pelo menos uma abordagem (extra para ambas).
+    \item Foco aqui: Lockdep-style (preventivo); grafo de espera como extensão.
+  \end{itemize}
+\end{frame}
+
+\section{Fundamentos Teóricos}
+\begin{frame}{Conceitos Chave}
+  \begin{itemize}
+    \item Deadlock: Espera circular (condições de Coffman).
+    \item Grafo de Espera: Nodes=threads/resources; ciclo=deadlock real (DFS).
+    \item Lockdep-Style: Grafo dependências (nodes=locks, edges=ordem); ciclo=potencial inversão.
+  \end{itemize}
+\end{frame}
+
+\section{Implementação por Arquivo}
+\begin{frame}{lockdep.h: Estruturas de Dados}
+  \begin{itemize}
+    \item lock_node_t: Grafo (children) + lista (next); dono (current_held_lock).
+    \item adjacency_locks_t: Edges para dependências.
+    \item held_lock_t: Pilha de holds com trace e timestamp.
+    \item thread_context_t: Contexto thread com pilha held.
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=20, lastline=25]{\cHeader} % Ajuste linhas para trecho chave
+\end{frame}
+
+\begin{frame}{pthread_interpose.c: Hooking Pthread}
+  \begin{itemize}
+    \item Interposição via dlsym para lock/unlock/trylock.
+    \item Chama lockdep_acquire/release; evita recursão (in_interpose).
+    \item Para trylock: Prevene se deadlock detectado.
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=30, lastline=40]{\cInterpose} % Trecho chave
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
+    \item has_cycle: DFS recursivo para detectar ciclos; reporta com traces.
+    \item print_cycle: Relatório detalhado (path, owners, sugestão order).
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=300, lastline=310]{\cCore} % Ajuste para has_cycle
+\end{frame}
+
+\begin{frame}{t05_dining_philosophers.c: Exemplo}
+  \begin{itemize}
+    \item Clássico problema: 5 filósofos, 5 garfos (mutexes).
+    \item SHALL_LOCK=1: Todos pegam left first → ciclo.
+    \item Com lockdep: Detecta preventivamente.
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=60, lastline=70]{\cDining} % Trecho philosopher
+\end{frame}
+
+\section{Exemplo de Execução}
+\begin{frame}{Resultado no Exemplo}
+  \begin{itemize}
+    \item Com LD_PRELOAD: Detecta ciclo (e.g., lock_0x8050 → ... → lock_0x8050).
+    \item Reporta: Path, tempos, traces, states, sugestão (order by addr).
+    \item Atende preventivo; extensão para reativo via waiters.
+  \end{itemize}
+\end{frame}
+
+\section{Conclusão e Extensões}
+\begin{frame}{Conclusão}
+  \begin{itemize}
+    \item Atende lockdep-style; demonstra grafos em concurrency.
+    \item Limitações: O(n) lookups (add hash); sem fila wait full.
+    \item Impacto: Educacional; usa IA para análise.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Extensões Futuras}
+  \begin{itemize}
+    \item Implementar grafo espera: Add fila waiters, DFS thread-lock.
+    \item Suporte a outros sync (condvars, RW locks).
+    \item Otimizações: Hash para lookups; integração gdb/valgrind.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Perguntas?}
+  \centering
+  \Huge Obrigado! Dúvidas?
+\end{frame}
+
+\end{document}
