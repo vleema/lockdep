@@ -5,8 +5,9 @@
 \usepackage{listings} % Para snippets de código
 \lstset{basicstyle=\tiny\ttfamily, breaklines=true} % Config para código
 \usetheme{CambridgeUS}
+\usetheme{Dresden}
+\usecolortheme{dove}
 \setbeamertemplate{navigation symbols}{} % Remove symbols to avoid overflows
-
 
 % Code listing styling
 \definecolor{codegreen}{rgb}{0,0.6,0}
@@ -39,6 +40,7 @@
     inputencoding=utf8
 }
 \lstset{style=mystyle}
+
 \title[Detecção de Deadlocks]{Detecção de Deadlocks e Violação da Ordem de Aquisição de Travas}
 \subtitle{Baseado em DEFINITION.md}
 \institute{Universidade Federal do Rio Grande do Norte}
@@ -109,24 +111,38 @@ ze.gois.00@gmail.com \\
 \end{frame}
 
 \section{Introdução e Objetivo}
-\begin{frame}{Objetivo Geral}
-  \begin{itemize}
-    \item Estender mutexes didáticos para detectar deadlocks e violações de ordem.
-    \item Inspirado no lockdep do Linux.
-    \item Abordagens: Grafo de espera (reativo) ou verificação de ordem (preventivo).
-  \end{itemize}
+\begin{frame}{Objetivo}
+O objetivo deste projeto é estender uma implementação
+didática de mutexes feita em sala, adicionando mecanismos
+de detecção de deadlocks e/ou verificação da ordem de
+aquisição de travas, inspirando-se em abordagens reais
+como o lockdep do Linux.
 \end{frame}
 
-\begin{frame}{Requisitos Principais}
-  \begin{itemize}
-    \item Base em mutex C.
-    \item Estruturas: Dono atual, fila de espera, ordem por thread.
-    \item Implementar pelo menos uma abordagem (extra para ambas).
-    \item Foco aqui: Lockdep-style (preventivo); grafo de espera como extensão.
-  \end{itemize}
+\begin{frame}{Descrição}
+Mutexes garantem exclusão mútua em regiões críticas, mas
+quando múltiplas threads acessam múltiplos mutexes
+simultaneamente, podem surgir situações de deadlock —
+geralmente causadas por espera circular entre threads.
+
+Este projeto propõe duas abordagens complementares:
+
+\item 1. Detecção de deadlocks via grafo de espera:
+\begin{itemize}
+    \item Monitorar quais threads possuem e quais esperam por cada mutex.
+    \item Construir dinamicamente um grafo de espera por recursos.
+    \item Detectar ciclos no grafo, sinalizando um deadlock real.
+\end{itemize}
+
+\item 2. Detecção de violação da ordem de aquisição de travas (estilo lockdep):
+\begin{itemize}
+    \item Manter o histórico da ordem em que mutexes são adquiridos por cada thread.
+    \item Detectar quando uma thread tenta adquirir mutexes em uma ordem incompatível com a previamente observada, antes que o deadlock ocorra.
+    \item Exibir alertas sobre inversões de ordem (e.g., thread A adquire A → B, e thread B tenta B → A).
+\end{itemize}
 \end{frame}
 
-\section{Fundamentos Teóricos}
+\section{Teóricos}
 \begin{frame}{Conceitos Chave}
   \begin{itemize}
     \item Deadlock: Espera circular (condições de Coffman).
@@ -135,14 +151,63 @@ ze.gois.00@gmail.com \\
   \end{itemize}
 \end{frame}
 
-\section{Implementação por Arquivo}
-
-\begin{frame}{pthread_interpose.c: Hooking Pthread}
-  \begin{itemize}
-    \item Recebe endereço dos símbolos dinâmicos a serem ligados em tempo de execução;
-    \item Envelope das funções reais por funções de interposição.
-  \end{itemize}
+\begin{frame}{ELF Header Information}
+\begin{tabular}{l l}
+\hline
+\textbf{Field} & \textbf{Value} \\
+\hline
+Magic & 7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 \\
+Class & ELF64 \\
+Data & 2's complement, little endian \\
+Version & 1 (current) \\
+OS/ABI & UNIX - System V \\
+ABI Version & 0 \\
+Type & DYN (Position-Independent Executable file) \\
+Machine & Advanced Micro Devices X86-64 \\
+Version & 0x1 \\
+Entry point address & 0x1110 \\
+\hline
+\end{tabular}
 \end{frame}
+
+\begin{frame}{ELF Program Headers}
+\small
+ELF file type is DYN (Position-Independent Executable file)\\
+Entry point 0x1110\\
+There are 14 program headers, starting offset 64 (bytes into file)
+\vspace{3em}
+\scriptsize
+\begin{tabular}{l l l l 1 1 1 1}
+\hline
+\textbf{Type} & \textbf{Offset} & \textbf{VirtAddr} & \textbf{PhysAddr} & \textbf{FileSiz} & \textbf{MemSiz} & \textbf{Flags} & \textbf{Align} \\
+\hline
+PHDR & 0x0040 & 0x0040 & 0x0040 & 0x0310 & 0x0310 & R & 0x8 \\
+INTERP$^*$ & 0x0394 & 0x0394 & 0x0394 & 0x001c & 0x001c & R & 0x1 \\
+LOAD & 0x0000 & 0x0000 & 0x0000 & 0x0998 & 0x0998 & R & 0x1000 \\
+LOAD & 0x1000 & 0x1000 & 0x1000 & 0x0739 & 0x0739 & R E & 0x1000 \\
+LOAD & 0x2000 & 0x2000 & 0x2000 & 0x0378 & 0x0378 & R & 0x1000 \\
+LOAD & 0x2dc8 & 0x3dc8 & 0x3dc8 & 0x02b8 & 0x03e0 & RW & 0x1000 \\
+DYNAMIC & 0x2dd8 & 0x3dd8 & 0x3dd8 & 0x01e0 & 0x01e0 & RW & 0x8 \\
+NOTE & 0x0350 & 0x0350 & 0x0350 & 0x0020 & 0x0020 & R & 0x8 \\
+\hline
+\end{tabular}
+$^*$\ [Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]
+\end{frame}
+
+\begin{frame}
+\includegraphics[width=0.9\linewidth]{./ld_linux.png}
+\end{frame}
+
+\begin{frame}
+\begin{itemize}
+\item LD_PRELOAD \\
+    A list of additional, user-specified, ELF shared objects to
+    be loaded before all others.  This feature can be used to
+    selectively override functions in other shared objects.
+\end{itemize}
+\end{frame}
+
+\section{Implementação por Arquivo}
 
 \begin{frame}{pthread_interpose.c: Hooking Pthread}
   \begin{itemize}
@@ -209,16 +274,6 @@ ze.gois.00@gmail.com \\
     \item lockdep_acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
     \item lockdep_release_lock: Libera, remove
   \end{itemize}
-  \lstinputlisting[language=C, firstnumber=300, firstline=300, lastline=310]{\cCore}
-\end{frame}
-
-\begin{frame}{lockdep_core.c: Lógica Central}
-  \begin{itemize}
-    \item lockdep_init: Inicializa
-    \item lockdep_acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
-    \item lockdep_release_lock: Libera, remove
-  \end{itemize}
-  \lstinputlisting[language=C, firstnumber=300, firstline=300, lastline=310]{\cCore}
 \end{frame}
 
 \begin{frame}{lockdep_core.c: Lógica Central}
@@ -302,23 +357,13 @@ ze.gois.00@gmail.com \\
   \lstinputlisting[language=C, firstnumber=212, firstline=212, lastline=232]{\cCore}
 \end{frame}
 
-\begin{frame}{t05_dining_philosophers.c: Exemplo}
-  \begin{itemize}
-    \item Clássico problema: 5 filósofos, 5 garfos (mutexes).
-    \item SHALL_LOCK=1: Todos pegam left first → ciclo.
-    \item Com lockdep: Detecta preventivamente.
-  \end{itemize}
-  \lstinputlisting[language=C, firstnumber=60, firstline=60, lastline=70]{\cDining} % Trecho philosopher
+\begin{frame}{lockdep_core.c: has deadlock?}
+  \lstinputlisting[language=C, firstnumber=338, firstline=338, lastline=364]{\cCore}
 \end{frame}
 
 \section{Exemplo de Execução}
-\begin{frame}{Resultado no Exemplo}
-  \begin{itemize}
-    \item Com LD_PRELOAD: Detecta ciclo (e.g., lock_0x8050 → ... → lock_0x8050).
-    \item Reporta: Path, tempos, traces, states, sugestão (order by addr).
-    \item Atende preventivo; extensão para reativo via waiters.
-  \end{itemize}
-\end{frame}
+
+% ADICIONAR AQUI!!!
 
 \section{Conclusão e Extensões}
 \begin{frame}{Conclusão}
