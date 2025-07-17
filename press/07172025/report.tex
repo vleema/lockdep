@@ -20,13 +20,16 @@
     keywordstyle=\color{magenta},
     numberstyle=\tiny\color{codegray},
     stringstyle=\color{codepurple},
-    basicstyle=\ttfamily\footnotesize,
+    basicstyle=\ttfamily\tiny,
+    xleftmargin=15pt,
+    frame=single,
     breakatwhitespace=false,
     breaklines=false,
     captionpos=b,
     keepspaces=true,
+    firstnumber=auto,
     numbers=left,
-    numbersep=5pt,
+    numbersep=7pt,
     showspaces=false,
     showstringspaces=false,
     showtabs=false,
@@ -134,60 +137,169 @@ ze.gois.00@gmail.com \\
 
 \section{Implementação por Arquivo}
 
-\begin{frame}{lockdep.h: Estruturas de Dados}
+\begin{frame}{pthread_interpose.c: Hooking Pthread}
   \begin{itemize}
-    \item lock_node_t: Grafo (children) + lista (next); dono (current_held_lock).
-    \item adjacency_locks_t: Edges para dependências.
-    \item held_lock_t: Pilha de holds com trace e timestamp.
-    \item thread_context_t: Contexto thread com pilha held.
+    \item Recebe endereço dos símbolos dinâmicos a serem ligados em tempo de execução;
+    \item Envelope das funções reais por funções de interposição.
   \end{itemize}
-\end{frame}
-
-\begin{frame}{lockdep.h: Estruturas de Dados}
-  \begin{itemize}
-    \item lock_node_t: Grafo (children) + lista (next); dono (current_held_lock).
-  \end{itemize}
-  \lstinputlisting[language=C, firstline=29, lastline=37]{\cHeader} % Ajuste linhas para trecho chave
-\end{frame}
-
-
-\begin{frame}{lockdep.h: Estruturas de Dados}
-  \begin{itemize}
-    \item adjacency_locks_t: Edges para dependências.
-  \end{itemize}
-  \lstinputlisting[language=C, firstline=40, lastline=43]{\cHeader} % Ajuste linhas para trecho chave
-\end{frame}
-
-\begin{frame}{lockdep.h: Estruturas de Dados}
-  \begin{itemize}
-    \item held_lock_t: Pilha de holds com trace e timestamp.
-  \end{itemize}
-  \lstinputlisting[language=C, firstline=45, lastline=53]{\cHeader} % Ajuste linhas para trecho chave
-\end{frame}
-
-\begin{frame}{lockdep.h: Estruturas de Dados}
-  \begin{itemize}
-    \item thread_context_t: Contexto thread com pilha held.
-  \end{itemize}
-  \lstinputlisting[language=C, firstline=55, lastline=62]{\cHeader} % Ajuste linhas para trecho chave
 \end{frame}
 
 \begin{frame}{pthread_interpose.c: Hooking Pthread}
   \begin{itemize}
-    \item Interposição via dlsym para lock/unlock/trylock.
-    \item Chama lockdep_acquire/release; evita recursão (in_interpose).
-    \item Para trylock: Prevene se deadlock detectado.
+  \item Recebe endereço dos símbolos dinâmicos a serem ligados em tempo de execução;
   \end{itemize}
-  \lstinputlisting[language=C, firstline=30, lastline=40]{\cInterpose} % Trecho chave
+  \lstinputlisting[language=C, firstnumber=9, firstline=9, lastline=25]{\cInterpose} % Trecho chave
+\end{frame}
+
+\begin{frame}{pthread_interpose.c: Hooking Pthread}
+  \begin{itemize}
+  \item Envelope das funções reais por funções de interposição.
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=37, firstline=37, lastline=49]{\cInterpose} % Trecho chave
+\end{frame}
+
+\begin{frame}{pthread_interpose.c: Hooking Pthread}
+  \begin{itemize}
+  \item Envelope das funções reais por funções de interposição.
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=51, firstline=51, lastline=65]{\cInterpose} % Trecho chave
+\end{frame}
+
+\begin{frame}{pthread_interpose.c: Hooking Pthread}
+  \begin{itemize}
+  \item Envelope das funções reais por funções de interposição.
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=67, firstline=67, lastline=77]{\cInterpose} % Trecho chave
+\end{frame}
+
+\begin{frame}{lockdep.h: Estruturas de Dados}
+  \begin{itemize}
+    \item lock_node_t: Grafo (children) + lista (next); dono (current_held_lock).
+    \item adjacency_locks_t: Edges para dependências.
+    \item held_lock_t: Pilha de holds com trace e timestamp.
+    \item thread_context_t: Contexto thread com pilha held.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{lockdep.h: Estruturas de Dados}
+    \begin{itemize}
+        \item lock_node_t: Grafo (children) + lista (next); dono (current_held_lock).
+    \end{itemize}
+    \lstinputlisting[language=C, firstnumber=30, firstline=30, lastline=37]{\cHeader}
+    \begin{itemize}
+        \item adjacency_locks_t: Edges para dependências.
+    \end{itemize}
+    \lstinputlisting[language=C, firstnumber=40, firstline=40, lastline=43]{\cHeader}
+\end{frame}
+
+\begin{frame}{lockdep.h: Estruturas de Dados}
+  \begin{itemize}
+    \item held_lock_t: Pilha de holds com trace e timestamp.
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=46, firstline=46, lastline=53]{\cHeader}
+  \begin{itemize}
+    \item thread_context_t: Contexto thread com pilha held.
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=56, firstline=56, lastline=62]{\cHeader}
 \end{frame}
 
 \begin{frame}{lockdep_core.c: Lógica Central}
   \begin{itemize}
-    \item acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
-    \item has_cycle: DFS recursivo para detectar ciclos; reporta com traces.
-    \item print_cycle: Relatório detalhado (path, owners, sugestão order).
+    \item lockdep_init: Inicializa
+    \item lockdep_acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
+    \item lockdep_release_lock: Libera, remove
   \end{itemize}
-  \lstinputlisting[language=C, firstline=300, lastline=310]{\cCore} % Ajuste para has_cycle
+  \lstinputlisting[language=C, firstnumber=300, firstline=300, lastline=310]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_init: Inicializa
+    \item lockdep_acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
+    \item lockdep_release_lock: Libera, remove
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=300, firstline=300, lastline=310]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_init: Inicializa
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=372, firstline=372, lastline=379]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=381, firstline=381, lastline=395]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_release_lock: Libera, remove
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=397, firstline=397, lastline=404]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: Registra, adiciona dep, checa ciclo (DFS).
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=381, firstline=381, lastline=395]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: find thread context
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=145, firstline=145, lastline=153]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: find or register lock
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=125, firstline=125, lastline=143]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: add lock to thread context
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=155, firstline=155, lastline=157, breaklines=true]{\cCore}
+  \lstinputlisting[language=C, firstnumber=169, firstline=169, lastline=169]{\cCore}
+  \lstinputlisting[language=C, firstnumber=188, firstline=188, lastline=191]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: add lock to thread context
+  \end{itemize}
+  \lstinputlisting[language=C, breaklines=true, firstnumber=158, firstline=158, lastline=167]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: add lock to thread context
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=155, firstline=155, lastline=157, breaklines=true]{\cCore}
+  \lstinputlisting[language=C, firstnumber=169, firstline=169, lastline=169]{\cCore}
+  \lstinputlisting[language=C, firstnumber=188, firstline=188, lastline=191]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: add lock to thread context
+  \end{itemize}
+  \lstinputlisting[language=C, breaklines=true, firstnumber=170, firstline=170, lastline=187]{\cCore}
+\end{frame}
+
+\begin{frame}{lockdep_core.c: Lógica Central}
+  \begin{itemize}
+    \item lockdep_acquire_lock: add dependency to graph
+  \end{itemize}
+  \lstinputlisting[language=C, firstnumber=212, firstline=212, lastline=232]{\cCore}
 \end{frame}
 
 \begin{frame}{t05_dining_philosophers.c: Exemplo}
@@ -196,7 +308,7 @@ ze.gois.00@gmail.com \\
     \item SHALL_LOCK=1: Todos pegam left first → ciclo.
     \item Com lockdep: Detecta preventivamente.
   \end{itemize}
-  \lstinputlisting[language=C, firstline=60, lastline=70]{\cDining} % Trecho philosopher
+  \lstinputlisting[language=C, firstnumber=60, firstline=60, lastline=70]{\cDining} % Trecho philosopher
 \end{frame}
 
 \section{Exemplo de Execução}

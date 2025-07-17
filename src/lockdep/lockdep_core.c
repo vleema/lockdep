@@ -381,7 +381,6 @@ void lockdep_init(void)
 bool lockdep_acquire_lock(const void* lock_addr)
 {
     fprintf(stderr, "[LOCKDEP] Acquiring lock %p\n", lock_addr);
-
     pthread_mutex_lock(&lockdep_mutex);
 
     thread_context_t* ctx = find_thread_context(pthread_self());
@@ -392,17 +391,14 @@ bool lockdep_acquire_lock(const void* lock_addr)
     deadlock ? 42 : unvisit_locks();
 
     pthread_mutex_unlock(&lockdep_mutex);
-
     return !deadlock;
 }
 
 void lockdep_release_lock(const void* lock_addr)
 {
     fprintf(stderr, "[LOCKDEP] Releasing lock %p\n", lock_addr);
-
     pthread_mutex_lock(&lockdep_mutex);
 
     release_lock_from_thread_context(find_thread_context(pthread_self()), lock_addr);
-
     pthread_mutex_unlock(&lockdep_mutex);
 }

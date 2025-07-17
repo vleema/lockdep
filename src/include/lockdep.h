@@ -26,39 +26,39 @@ typedef struct adjacent_locks adjacency_locks_t;
 typedef struct held_lock held_lock_t;
 typedef struct thread_context thread_context_t;
 
-// Node representing a lock in the lock dependency graph.
+
 typedef struct lock_node {
-    const void* lock_addr;                 // Address of the lock.
-    char lock_name[LOCKDEP_MAX_LOCK_NAME]; // Symbolic name for the lock.
-    bool was_visited;                      // Flag to indicate if the lock was visited during DFS.
-    adjacency_locks_t* children;           // List of adjacent (child) locks.
-    struct lock_node* next;                // Next lock node in the list.
-    held_lock_t* current_held_lock;        // Reference to current held_lock_t if owned.
+    const void* lock_addr;
+    char lock_name[LOCKDEP_MAX_LOCK_NAME];
+    bool was_visited;
+    adjacency_locks_t* children;
+    struct lock_node* next;
+    held_lock_t* current_held_lock;
 } lock_node_t;
 
-// Represents an adjacency (edge) in the lock dependency graph.
+
 typedef struct adjacent_locks {
-    lock_node_t* lock;           // Pointer to the adjacent lock node.
-    struct adjacent_locks* next; // Next adjacency in the list.
+    lock_node_t* lock;
+    struct adjacent_locks* next;
 } adjacency_locks_t;
 
-// Represents a lock currently held by a thread.
+
 typedef struct held_lock {
-    lock_node_t* lock;                                // Pointer to the held lock node.
-    struct timespec acquired_at;                      // When this lock was acquired by this thread.
-    void* acquisition_stack[LOCKDEP_MAX_STACK_DEPTH]; // Stack trace where acquired.
-    int stack_depth;                                  // Number of valid stack frames.
-    thread_context_t* thread_context;                 // Reference to the thread context holding this lock.
-    struct held_lock* next;                           // Next held lock in the list.
+    lock_node_t* lock;
+    struct timespec acquired_at;
+    void* acquisition_stack[LOCKDEP_MAX_STACK_DEPTH];
+    int stack_depth;
+    thread_context_t* thread_context;
+    struct held_lock* next;
 } held_lock_t;
 
-// Context information for a thread, including held locks.
+
 typedef struct thread_context {
-    pthread_t pthread_id;        // pthread identifier (for internal tracking).
-    pid_t thread_id;             // Kernel thread ID (for user-friendly display).
-    held_lock_t* held_locks;     // List of locks currently held by the thread.
-    char thread_name[32];        // thread name for debugging.
-    struct thread_context* next; // Next thread context in the list.
+    pthread_t pthread_id;
+    pid_t thread_id;
+    held_lock_t* held_locks;
+    char thread_name[32];
+    struct thread_context* next;
 } thread_context_t;
 
 void lockdep_init(void);

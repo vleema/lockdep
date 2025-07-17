@@ -37,7 +37,6 @@ static __thread bool in_interpose = false;
 int pthread_mutex_lock(pthread_mutex_t* mutex)
 {
     init_real_functions();
-
     if (lockdep_enabled && !in_interpose) {
         in_interpose = true;
         if (!lockdep_acquire_lock(mutex)) {
@@ -45,30 +44,13 @@ int pthread_mutex_lock(pthread_mutex_t* mutex)
         }
         in_interpose = false;
     }
-
     int result = real_pthread_mutex_lock(mutex);
-
-    return result;
-}
-
-int pthread_mutex_unlock(pthread_mutex_t* mutex)
-{
-    init_real_functions();
-
-    int result = real_pthread_mutex_unlock(mutex);
-    if (lockdep_enabled && !in_interpose) {
-        in_interpose = true;
-        lockdep_release_lock(mutex);
-        in_interpose = false;
-    }
-
     return result;
 }
 
 int pthread_mutex_trylock(pthread_mutex_t* mutex)
 {
     init_real_functions();
-
     int result = real_pthread_mutex_trylock(mutex);
     if (result == 0 && lockdep_enabled && !in_interpose) {
         in_interpose = true;
@@ -79,6 +61,17 @@ int pthread_mutex_trylock(pthread_mutex_t* mutex)
         }
         in_interpose = false;
     }
+    return result;
+}
 
+int pthread_mutex_unlock(pthread_mutex_t* mutex)
+{
+    init_real_functions();
+    int result = real_pthread_mutex_unlock(mutex);
+    if (lockdep_enabled && !in_interpose) {
+        in_interpose = true;
+        lockdep_release_lock(mutex);
+        in_interpose = false;
+    }
     return result;
 }
