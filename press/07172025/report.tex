@@ -4,10 +4,38 @@
 \usepackage[T1]{fontenc}
 \usepackage{listings} % Para snippets de código
 \lstset{basicstyle=\tiny\ttfamily, breaklines=true} % Config para código
-
 \usetheme{CambridgeUS}
 \setbeamertemplate{navigation symbols}{} % Remove symbols to avoid overflows
 
+
+% Code listing styling
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=false,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    extendedchars=true,
+    texcl=true,
+    inputencoding=utf8
+}
+\lstset{style=mystyle}
 \title[Detecção de Deadlocks]{Detecção de Deadlocks e Violação da Ordem de Aquisição de Travas}
 \subtitle{Baseado em DEFINITION.md}
 \institute{Universidade Federal do Rio Grande do Norte}
@@ -18,6 +46,8 @@
 \newcommand{\cInterpose}{../../src/interpose/pthread_interpose.c}
 
 \newcommand{\cDining}{../../tests/t05_dining_philosophers.c}
+
+\usepackage[strings]{underscore}
 
 \begin{document}
 
@@ -103,6 +133,7 @@ ze.gois.00@gmail.com \\
 \end{frame}
 
 \section{Implementação por Arquivo}
+
 \begin{frame}{lockdep.h: Estruturas de Dados}
   \begin{itemize}
     \item lock_node_t: Grafo (children) + lista (next); dono (current_held_lock).
@@ -110,7 +141,35 @@ ze.gois.00@gmail.com \\
     \item held_lock_t: Pilha de holds com trace e timestamp.
     \item thread_context_t: Contexto thread com pilha held.
   \end{itemize}
-  \lstinputlisting[language=C, firstline=20, lastline=25]{\cHeader} % Ajuste linhas para trecho chave
+\end{frame}
+
+\begin{frame}{lockdep.h: Estruturas de Dados}
+  \begin{itemize}
+    \item lock_node_t: Grafo (children) + lista (next); dono (current_held_lock).
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=29, lastline=37]{\cHeader} % Ajuste linhas para trecho chave
+\end{frame}
+
+
+\begin{frame}{lockdep.h: Estruturas de Dados}
+  \begin{itemize}
+    \item adjacency_locks_t: Edges para dependências.
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=40, lastline=43]{\cHeader} % Ajuste linhas para trecho chave
+\end{frame}
+
+\begin{frame}{lockdep.h: Estruturas de Dados}
+  \begin{itemize}
+    \item held_lock_t: Pilha de holds com trace e timestamp.
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=45, lastline=53]{\cHeader} % Ajuste linhas para trecho chave
+\end{frame}
+
+\begin{frame}{lockdep.h: Estruturas de Dados}
+  \begin{itemize}
+    \item thread_context_t: Contexto thread com pilha held.
+  \end{itemize}
+  \lstinputlisting[language=C, firstline=55, lastline=62]{\cHeader} % Ajuste linhas para trecho chave
 \end{frame}
 
 \begin{frame}{pthread_interpose.c: Hooking Pthread}
