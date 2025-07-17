@@ -384,10 +384,10 @@ bool lockdep_acquire_lock(const void* lock_addr)
 
     pthread_mutex_lock(&lockdep_mutex);
 
-    thread_context_t* ctx = find_thread_context(pthread_self());
-
     lock_node_t* lock = find_or_register_lock(lock_addr);
-    add_dependency_to_graph(add_lock_to_thread_context(ctx, lock), lock);
+
+    add_dependency_to_graph(add_lock_to_thread_context(find_thread_context(pthread_self()), lock), lock);
+
     const bool deadlock = has_deadlock(lock);
     deadlock ? 42 : unvisit_locks();
 
